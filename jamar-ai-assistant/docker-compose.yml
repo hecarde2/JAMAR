@@ -1,0 +1,75 @@
+name: jamar-ai-assistant
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jamar-backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 35s
+    networks:
+      - jamar-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jamar-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - jamar-net
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: jamar-bot
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      API_BASE_URL: http://backend:8000
+      PUBLIC_WEBAPP_URL: ${PUBLIC_WEBAPP_URL:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - jamar-net
+
+networks:
+  jamar-net:
+    driver: bridge
