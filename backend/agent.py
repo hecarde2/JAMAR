@@ -18,6 +18,8 @@ import re
 import threading
 import uuid
 from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from catalog import CATEGORY_KEYWORDS, CITY_NAMES, COLOR_KEYWORDS, demo_customer
@@ -27,6 +29,36 @@ from schemas import ChatResponse, CreditOffer, Product
 from snowflake_client import SnowflakeClient, get_snowflake_client, normalize_text
 
 logger = logging.getLogger(__name__)
+
+_INSTRUCTIONS_PATH = Path(__file__).resolve().parent / "prompts" / "agent_instructions.md"
+
+_FALLBACK_INSTRUCTIONS = (
+    "Eres el Asistente Jamar, asesor de interiores y ventas de Muebles Jamar en Colombia. "
+    "Hablas español colombiano, con tono cálido, profesional y directo. "
+    "Reglas obligatorias: no uses emojis ni Markdown; no inventes precios, stock ni condiciones "
+    "de crédito; usa exclusivamente el contexto entregado; si no hay productos adecuados dilo "
+    "con claridad; menciona precios en pesos colombianos con separador de miles; si hay una "
+    "oferta CrediJamar indica estado, cuota semanal y plazo; cierra con una sola pregunta de "
+    "seguimiento. Responde en máximo 150 palabras y evita listas extensas."
+)
+
+
+@lru_cache(maxsize=1)
+def get_agent_instructions() -> str:
+    """Carga las instrucciones del agente desde el archivo Markdown.
+
+    Si el archivo no está disponible (por ejemplo, en un despliegue incompleto),
+    se usa un prompt mínimo embebido para no dejar al agente sin reglas.
+    """
+    try:
+        content = _INSTRUCTIONS_PATH.read_text(encoding="utf-8").strip()
+        if content:
+            return content
+        logger.warning("El archivo de instrucciones está vacío: %s", _INSTRUCTIONS_PATH)
+    except OSError:
+        logger.exception("No fue posible leer las instrucciones: %s", _INSTRUCTIONS_PATH)
+    return _FALLBACK_INSTRUCTIONS
+
 
 EMOJI_RE = re.compile(
     "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\uFE0F\u200D]"
@@ -478,15 +510,7 @@ class JamarAgent:
             },
         }
 
-        system_prompt = (
-            "Eres el Asistente Jamar, asesor de interiores y ventas de Muebles Jamar en Colombia. "
-            "Hablas español colombiano, con tono cálido, profesional y directo. "
-            "Reglas obligatorias: no uses emojis; no inventes precios, stock ni condiciones de crédito; "
-            "usa exclusivamente el contexto entregado; si no hay productos adecuados dilo con claridad; "
-            "menciona precios en pesos colombianos con separador de miles; si hay una oferta CrediJamar "
-            "indica estado, cuota semanal y plazo; cierra con una sola pregunta de seguimiento. "
-            "Responde en máximo 150 palabras y evita listas extensas."
-        )
+        system_prompt = get_agent_instructions()
         context_json = json.dumps(context, ensure_ascii=False, default=str)
         system_instruction = (
             f"{system_prompt}\n\nContexto recuperado en tiempo real (JSON): {context_json}"
@@ -508,6 +532,7 @@ class JamarAgent:
                     system_instruction=system_instruction,
                     temperature=0.4,
                     max_output_tokens=450,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             return (response.text or "").strip()

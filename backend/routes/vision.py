@@ -205,6 +205,7 @@ def _gemini_analysis(image: Image.Image, room_hint: str) -> Optional[Dict[str, A
                 temperature=0.2,
                 max_output_tokens=300,
                 response_mime_type="application/json",
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         content = (response.text or "").strip()

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     snowflake_account: str = ""
     snowflake_user: str = ""
     snowflake_password: str = ""
+    snowflake_authenticator: str = ""
+    snowflake_client_store_temporary_credential: bool = False
     snowflake_database: str = "JAMAR_DW"
     snowflake_schema: str = "PUBLIC"
     snowflake_warehouse: str = "JAMAR_WH"
@@ -72,13 +74,11 @@ class Settings(BaseSettings):
     @property
     def snowflake_configured(self) -> bool:
         """Indica si existen credenciales completas de Snowflake."""
-        return all(
-            [
-                self.snowflake_account.strip(),
-                self.snowflake_user.strip(),
-                self.snowflake_password.strip(),
-            ]
-        )
+        if not self.snowflake_account.strip() or not self.snowflake_user.strip():
+            return False
+        if self.snowflake_authenticator.strip():
+            return True
+        return bool(self.snowflake_password.strip())
 
     @property
     def ai_enabled(self) -> bool:

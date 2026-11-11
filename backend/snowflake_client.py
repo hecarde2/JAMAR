@@ -102,7 +102,6 @@ class SnowflakeClient:
         params: Dict[str, Any] = {
             "account": self.settings.snowflake_account,
             "user": self.settings.snowflake_user,
-            "password": self.settings.snowflake_password,
             "database": self.settings.snowflake_database,
             "schema": self.settings.snowflake_schema,
             "warehouse": self.settings.snowflake_warehouse,
@@ -111,6 +110,18 @@ class SnowflakeClient:
             "login_timeout": 15,
             "network_timeout": 30,
         }
+        authenticator = self.settings.snowflake_authenticator.strip()
+        if authenticator.lower() == "externalbrowser":
+            params["authenticator"] = "externalbrowser"
+            if self.settings.snowflake_client_store_temporary_credential:
+                params["client_store_temporary_credential"] = True
+        elif authenticator.lower() == "programmatic_access_token":
+            params["authenticator"] = "PROGRAMMATIC_ACCESS_TOKEN"
+            params["token"] = self.settings.snowflake_password
+        else:
+            if authenticator:
+                params["authenticator"] = authenticator
+            params["password"] = self.settings.snowflake_password
         if self.settings.snowflake_role:
             params["role"] = self.settings.snowflake_role
         logger.info("Conectando a Snowflake (%s)", self.settings.snowflake_account)
