@@ -179,7 +179,7 @@ Sin esta clave el asistente funciona con plantillas locales y la visión usa un 
 ### 4. Configurar integraciones opcionales
 
 - Telegram: define `TELEGRAM_BOT_TOKEN` y una `PUBLIC_WEBAPP_URL` accesible por Telegram.
-- Snowflake: define `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER` y `SNOWFLAKE_PASSWORD`.
+- Snowflake: define `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER` y las credenciales correspondientes. La aplicación no usa datos demo salvo que se active explícitamente `SNOWFLAKE_FALLBACK_DEMO=true`.
 
 ### 5. Iniciar los servicios
 
@@ -246,20 +246,21 @@ Toda la configuración se carga desde variables de entorno o desde `.env`. En Do
 
 ### Snowflake
 
-| Variable                                      | Valor por defecto      | Descripción                                                                                                                                                |
-| --------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SNOWFLAKE_ACCOUNT`                           | vacío                  | Identificador de cuenta de Snowflake.                                                                                                                      |
-| `SNOWFLAKE_USER`                              | vacío                  | Usuario de conexión.                                                                                                                                       |
-| `SNOWFLAKE_PASSWORD`                          | vacío                  | Contraseña del usuario. Ignorada cuando se usa `externalbrowser`.                                                                                          |
-| `SNOWFLAKE_AUTHENTICATOR`                     | vacío                  | Método de autenticación. Vacío = usuario/contraseña. Usa `externalbrowser` para SSO o `PROGRAMMATIC_ACCESS_TOKEN` si `SNOWFLAKE_PASSWORD` contiene un PAT. |
-| `SNOWFLAKE_CLIENT_STORE_TEMPORARY_CREDENTIAL` | `false`                | Solo con `externalbrowser`: guarda el token SSO para reutilizarlo sin abrir el navegador de nuevo.                                                         |
-| `SNOWFLAKE_DATABASE`                          | `JAMAR_DW`             | Base de datos.                                                                                                                                             |
-| `SNOWFLAKE_SCHEMA`                            | `PUBLIC`               | Esquema.                                                                                                                                                   |
-| `SNOWFLAKE_WAREHOUSE`                         | `JAMAR_WH`             | Warehouse usado en las consultas.                                                                                                                          |
-| `SNOWFLAKE_ROLE`                              | vacío                  | Rol opcional. Se recomienda un rol de solo lectura.                                                                                                        |
-| `SNOWFLAKE_INVENTORY_TABLE`                   | `INVENTARIO_PRODUCTOS` | Tabla de inventario.                                                                                                                                       |
-| `SNOWFLAKE_CUSTOMER_TABLE`                    | `CUSTOMER_360`         | Tabla de perfiles Customer 360.                                                                                                                            |
-| `SNOWFLAKE_FALLBACK_DEMO`                     | `true`                 | Si una consulta falla, usa el catálogo demo. En producción se recomienda `false` para detectar fallos.                                                     |
+| Variable                                      | Valor por defecto      | Descripción                                                                                                                                                               |
+| --------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SNOWFLAKE_ACCOUNT`                           | vacío                  | Identificador de cuenta de Snowflake.                                                                                                                                     |
+| `SNOWFLAKE_USER`                              | vacío                  | Usuario de conexión.                                                                                                                                                      |
+| `SNOWFLAKE_TOKEN`                             | vacío                  | PAT (Programmatic Access Token) emitido por Snowflake. Al definirlo se activa la autenticación por token.                                                                 |
+| `SNOWFLAKE_PASSWORD`                          | vacío                  | Contraseña tradicional del usuario. También se acepta como nombre antiguo de la variable PAT si se configura `PROGRAMMATIC_ACCESS_TOKEN`. Ignorada con `externalbrowser`. |
+| `SNOWFLAKE_AUTHENTICATOR`                     | vacío                  | Método de autenticación. Vacío = usuario/contraseña o PAT si se define `SNOWFLAKE_TOKEN`. Usa `externalbrowser` para SSO.                                                 |
+| `SNOWFLAKE_CLIENT_STORE_TEMPORARY_CREDENTIAL` | `false`                | Solo con `externalbrowser`: guarda el token SSO para reutilizarlo sin abrir el navegador de nuevo.                                                                        |
+| `SNOWFLAKE_DATABASE`                          | `JAMAR_DW`             | Base de datos.                                                                                                                                                            |
+| `SNOWFLAKE_SCHEMA`                            | `PUBLIC`               | Esquema.                                                                                                                                                                  |
+| `SNOWFLAKE_WAREHOUSE`                         | `JAMAR_WH`             | Warehouse usado en las consultas.                                                                                                                                         |
+| `SNOWFLAKE_ROLE`                              | vacío                  | Rol opcional. Se recomienda un rol de solo lectura.                                                                                                                       |
+| `SNOWFLAKE_INVENTORY_TABLE`                   | `INVENTARIO_PRODUCTOS` | Tabla de inventario.                                                                                                                                                      |
+| `SNOWFLAKE_CUSTOMER_TABLE`                    | `CUSTOMER_360`         | Tabla de perfiles Customer 360.                                                                                                                                           |
+| `SNOWFLAKE_FALLBACK_DEMO`                     | `false`                | Si es `true`, usa datos demo cuando Snowflake no está configurado o una consulta falla. Por defecto los errores se muestran para evitar datos demo inesperados.           |
 
 ### Telegram
 

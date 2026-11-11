@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # --- Snowflake ---
     snowflake_account: str = ""
     snowflake_user: str = ""
+    snowflake_token: str = ""
     snowflake_password: str = ""
     snowflake_authenticator: str = ""
     snowflake_client_store_temporary_credential: bool = False
@@ -47,7 +48,7 @@ class Settings(BaseSettings):
     snowflake_role: str = ""
     snowflake_inventory_table: str = "INVENTARIO_PRODUCTOS"
     snowflake_customer_table: str = "CUSTOMER_360"
-    snowflake_fallback_demo: bool = True
+    snowflake_fallback_demo: bool = False
 
     # --- Inteligencia artificial (Google Gemini) ---
     gemini_api_key: str = ""
@@ -78,7 +79,7 @@ class Settings(BaseSettings):
             return False
         if self.snowflake_authenticator.strip():
             return True
-        return bool(self.snowflake_password.strip())
+        return bool(self.snowflake_token.strip() or self.snowflake_password.strip())
 
     @property
     def ai_enabled(self) -> bool:

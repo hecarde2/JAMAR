@@ -32,7 +32,7 @@ async def lifespan(_: FastAPI):
     """Registra el modo de operación y cierra conexiones al apagar."""
     logger.info(
         "Asistente Jamar iniciado | datos=%s | IA=%s | telegram=%s",
-        "Snowflake" if settings.snowflake_configured else "demostración",
+        get_snowflake_client().mode,
         "habilitada" if settings.ai_enabled else "plantillas locales",
         "habilitado" if settings.telegram_enabled else "sin token",
     )
@@ -84,7 +84,7 @@ def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         version=settings.app_version,
-        snowflake_mode="snowflake" if settings.snowflake_configured else "demo",
+        snowflake_mode=get_snowflake_client().mode,
         ai_enabled=settings.ai_enabled,
         telegram_enabled=settings.telegram_enabled,
         timestamp=datetime.now(timezone.utc).isoformat(),

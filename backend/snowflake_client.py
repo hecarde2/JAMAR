@@ -93,7 +93,19 @@ class SnowflakeClient:
 
     @property
     def mode(self) -> str:
-        return "snowflake" if self.configured else "demo"
+        if self.configured:
+            return "snowflake"
+        return "demo" if self.settings.snowflake_fallback_demo else "unconfigured"
+
+    def _use_demo(self) -> bool:
+        if self.configured:
+            return False
+        if self.settings.snowflake_fallback_demo:
+            return True
+        raise RuntimeError(
+            "Snowflake no está configurado. Define sus credenciales o activa "
+            "SNOWFLAKE_FALLBACK_DEMO=true para usar datos de demostración."
+        )
 
     def _connect(self):
         """Abre una conexión usando el conector oficial de Snowflake."""
@@ -111,13 +123,14 @@ class SnowflakeClient:
             "network_timeout": 30,
         }
         authenticator = self.settings.snowflake_authenticator.strip()
+        token = self.settings.snowflake_token.strip() or self.settings.snowflake_password
         if authenticator.lower() == "externalbrowser":
             params["authenticator"] = "externalbrowser"
             if self.settings.snowflake_client_store_temporary_credential:
                 params["client_store_temporary_credential"] = True
-        elif authenticator.lower() == "programmatic_access_token":
+        elif authenticator.lower() == "programmatic_access_token" or self.settings.snowflake_token.strip():
             params["authenticator"] = "PROGRAMMATIC_ACCESS_TOKEN"
-            params["token"] = self.settings.snowflake_password
+            params["token"] = token
         else:
             if authenticator:
                 params["authenticator"] = authenticator
@@ -235,7 +248,7 @@ class SnowflakeClient:
         """Busca productos en inventario aplicando filtros opcionales."""
         limit = max(1, min(int(limit), 50))
 
-        if not self.configured:
+        if self._use_demo():
             demo = self._demo_filter(DEMO_PRODUCTS, city, category, color, max_price, query)
             return [public_product(item, city) for item in demo[:limit]]
 
@@ -280,7 +293,7 @@ class SnowflakeClient:
             )
             return [public_product(item, city) for item in products[:limit]]
         except Exception:
-            logger.exception("Consulta de inventario fallida; se activa modo demostración")
+            logger.exception("Consulta de inventario en Snowflake fallida")
             if not self.settings.snowflake_fallback_demo:
                 raise
             demo = self._demo_filter(DEMO_PRODUCTS, city, category, color, max_price, query)
@@ -324,7 +337,7 @@ class SnowflakeClient:
 
     def get_product(self, product_id: str, city: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Recupera un producto por identificador."""
-        if not self.configured:
+        if self._use_demo():
             for item in DEMO_PRODUCTS:
                 if item["id"] == product_id:
                     return public_product(item, city)
@@ -342,7 +355,7 @@ class SnowflakeClient:
             products = self._map_inventory_rows(rows)
             return public_product(products[0], city) if products else None
         except Exception:
-            logger.exception("Consulta de producto fallida; se activa modo demostración")
+            logger.exception("Consulta de producto en Snowflake fallida")
             if not self.settings.snowflake_fallback_demo:
                 raise
             for item in DEMO_PRODUCTS:
@@ -377,7 +390,7 @@ class SnowflakeClient:
         """Consulta el perfil Customer 360 y el score de crédito del cliente."""
         if not user_id:
             return None
-        if not self.configured:
+        if self._use_demo():
             return demo_customer(user_id)
 
         sql = f"""
@@ -392,7 +405,11 @@ class SnowflakeClient:
         try:
             rows = self._query(sql, [user_id])
             if not rows:
-                return demo_customer(user_id)
+                return (
+                    demo_customer(user_id)
+                    if self.settings.snowflake_fallback_demo
+                    else None
+                )
             row = rows[0]
             preferred = row.get("categorias_preferidas")
             if isinstance(preferred, str):
@@ -417,7 +434,7 @@ class SnowflakeClient:
                 ),
             }
         except Exception:
-            logger.exception("Consulta Customer 360 fallida; se activa modo demostración")
+            logger.exception("Consulta Customer 360 en Snowflake fallida")
             if not self.settings.snowflake_fallback_demo:
                 raise
             return demo_customer(user_id)
