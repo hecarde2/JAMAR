@@ -90,8 +90,6 @@ GREETING_KEYWORDS = ["hola", "buenos dias", "buenos días", "buenas tardes", "bu
 PRODUCT_KEYWORDS = [
     "buscar",
     "busco",
-    "quiero",
-    "necesito",
     "mueble",
     "sofa",
     "sofá",
@@ -110,6 +108,13 @@ PRODUCT_KEYWORDS = [
     "recomendación",
     "opciones",
     "comprar",
+]
+FULL_CATALOG_PHRASES = [
+    "todos los productos",
+    "todos los muebles",
+    "catalogo completo",
+    "catalogo entero",
+    "todo el catalogo",
 ]
 
 MONEY_UNITS = {
@@ -339,7 +344,9 @@ def classify_intent(message: str, entities: Dict[str, Any]) -> str:
         return "stock"
     if any(normalize_text(word) in normalized for word in ORDER_KEYWORDS):
         return "order_status"
-    if entities["category"] or any(normalize_text(word) in normalized for word in PRODUCT_KEYWORDS):
+    if any(phrase in normalized for phrase in FULL_CATALOG_PHRASES) or entities["category"] or any(
+        normalize_text(word) in normalized for word in PRODUCT_KEYWORDS
+    ):
         return "product_search"
     if any(_keyword_present(normalized, word) for word in GREETING_KEYWORDS) and len(normalized.split()) <= 5:
         return "greeting"
@@ -442,6 +449,10 @@ class JamarAgent:
 
         entities = extract_entities(message)
         intent = classify_intent(message, entities)
+        normalized_message = normalize_text(message)
+        full_catalog_requested = any(
+            phrase in normalized_message for phrase in FULL_CATALOG_PHRASES
+        )
         effective_city = city or entities.get("city")
 
         customer = None
@@ -453,8 +464,9 @@ class JamarAgent:
                 self.sessions.set_name(key, profile_name)
 
         products: List[Dict[str, Any]] = []
-        if intent in {"product_search", "stock", "credit", "general", "greeting", "human_handoff"}:
-            products = self._retrieve_products(message, entities, effective_city)
+        if intent in {"product_search", "stock", "credit"}:
+            product_limit = 50 if intent == "product_search" and full_catalog_requested else 3
+            products = self._retrieve_products(message, entities, effective_city, limit=product_limit)
 
         credit_offer: Optional[CreditOffer] = None
         if entities.get("mentions_credit") or intent == "credit":
@@ -531,7 +543,11 @@ class JamarAgent:
             intent=intent,
             session_id=key,
             user_name=profile_name,
-            products=[Product(**item) for item in products],
+            products=[Product(**item) for item in (
+                products if intent == "product_search" and full_catalog_requested else products[:3]
+            )]
+            if intent in {"product_search", "stock"}
+            else [],
             credit=credit_offer,
             advisor=advisor_handoff,
             suggestions=self._suggestions(intent, products, credit_offer),
@@ -553,6 +569,7 @@ class JamarAgent:
         message: str,
         entities: Dict[str, Any],
         city: Optional[str],
+        limit: int = 3,
     ) -> List[Dict[str, Any]]:
         """Busca productos y aplica fallbacks para no dejar el catálogo vacío."""
         products = self.repository.list_products(
@@ -561,7 +578,7 @@ class JamarAgent:
             color=entities.get("color"),
             max_price=entities.get("max_price"),
             query=None if (entities.get("category") or entities.get("color")) else message,
-            limit=50,
+            limit=limit,
         )
         if not products:
             products = self.repository.list_products(
@@ -570,7 +587,7 @@ class JamarAgent:
                 color=entities.get("color"),
                 max_price=entities.get("max_price"),
                 query=None,
-                limit=50,
+                limit=limit,
             )
         if not products and city:
             products = self.repository.list_products(
@@ -579,7 +596,7 @@ class JamarAgent:
                 color=entities.get("color"),
                 max_price=entities.get("max_price"),
                 query=None,
-                limit=50,
+                limit=limit,
             )
         return products
 
