@@ -18,6 +18,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
             message=payload.message,
             user_id=payload.user_id,
             session_id=payload.session_id,
+            name=payload.name,
             city=payload.city,
             channel=payload.channel,
         )

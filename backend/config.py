@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     snowflake_token: str = ""
     snowflake_password: str = ""
     snowflake_authenticator: str = ""
+    snowflake_private_key_path: str = ""
+    snowflake_private_key_b64: str = ""
+    snowflake_private_key_passphrase: str = ""
     snowflake_client_store_temporary_credential: bool = False
     snowflake_database: str = "JAMAR_DW"
     snowflake_schema: str = "PUBLIC"
@@ -52,8 +55,8 @@ class Settings(BaseSettings):
 
     # --- Inteligencia artificial (Google Gemini) ---
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
-    gemini_vision_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-2.5-flash-lite"
+    gemini_vision_model: str = "gemini-2.5-flash-lite"
     gemini_timeout_seconds: float = 40.0
 
     # --- Telegram ---
@@ -67,6 +70,16 @@ class Settings(BaseSettings):
     credit_max_term_weeks: int = 52
     credit_min_down_payment_pct: float = 0.10
 
+    # --- Asesoría ---
+    advisor_timezone: str = "America/Bogota"
+    advisor_weekday_start: str = "08:00"
+    advisor_weekday_end: str = "18:00"
+    advisor_saturday_start: str = "09:00"
+    advisor_saturday_end: str = "13:00"
+    advisor_sunday_enabled: bool = False
+    advisor_sunday_start: str = "09:00"
+    advisor_sunday_end: str = "13:00"
+
     @property
     def cors_origin_list(self) -> List[str]:
         """Lista de orígenes permitidos para CORS."""
@@ -77,7 +90,13 @@ class Settings(BaseSettings):
         """Indica si existen credenciales completas de Snowflake."""
         if not self.snowflake_account.strip() or not self.snowflake_user.strip():
             return False
-        if self.snowflake_authenticator.strip():
+        authenticator = self.snowflake_authenticator.strip().lower()
+        if authenticator in {"snowflake_jwt", "jwt", "keypair"}:
+            return bool(
+                self.snowflake_private_key_path.strip()
+                or self.snowflake_private_key_b64.strip()
+            )
+        if authenticator:
             return True
         return bool(self.snowflake_token.strip() or self.snowflake_password.strip())
 

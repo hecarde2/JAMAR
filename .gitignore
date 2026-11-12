@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 
+secrets/*
+!secrets/.gitkeep
+
 __pycache__/
 *.py[cod]
 *.pyo

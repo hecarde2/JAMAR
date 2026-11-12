@@ -45,6 +45,8 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 logger = logging.getLogger("jamar.bot")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 
 # ---------------------------------------------------------------------------
@@ -78,21 +80,34 @@ def webapp_url(extra: str = "") -> str:
     return f"{base}{extra}" if extra else base
 
 
+WEBAPP_ENABLED = PUBLIC_WEBAPP_URL.startswith("https://")
+
+
+def webapp_button(label: str, url: str | None = None) -> InlineKeyboardButton | None:
+    """Devuelve un botón WebApp solo si la URL pública cumple el requisito HTTPS."""
+    if not WEBAPP_ENABLED:
+        return None
+    return InlineKeyboardButton(label, web_app=WebAppInfo(url=url or webapp_url()))
+
+
 def main_menu() -> InlineKeyboardMarkup:
     """Menú principal de la experiencia Telegram."""
-    return InlineKeyboardMarkup(
+    rows = [
         [
-            [
-                InlineKeyboardButton("Catálogo", callback_data="menu:catalog"),
-                InlineKeyboardButton("CrediJamar", callback_data="menu:credit"),
-            ],
-            [InlineKeyboardButton("Abrir Mini App", web_app=WebAppInfo(url=webapp_url()))],
-            [
-                InlineKeyboardButton("Hablar con un asesor", callback_data="menu:advisor"),
-                InlineKeyboardButton("Ayuda", callback_data="menu:help"),
-            ],
+            InlineKeyboardButton("Catálogo", callback_data="menu:catalog"),
+            InlineKeyboardButton("CrediJamar", callback_data="menu:credit"),
+        ],
+    ]
+    mini = webapp_button("Abrir Mini App")
+    if mini:
+        rows.append([mini])
+    rows.append(
+        [
+            InlineKeyboardButton("Hablar con un asesor", callback_data="menu:advisor"),
+            InlineKeyboardButton("Ayuda", callback_data="menu:help"),
         ]
     )
+    return InlineKeyboardMarkup(rows)
 
 
 def category_menu() -> InlineKeyboardMarkup:
@@ -117,9 +132,11 @@ def product_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
                 callback_data=f"prod:{product.get('id')}",
             )
         ]
-        for product in products[:4]
+        for product in products
     ]
-    rows.append([InlineKeyboardButton("Abrir Mini App", web_app=WebAppInfo(url=webapp_url()))])
+    mini = webapp_button("Abrir Mini App")
+    if mini:
+        rows.append([mini])
     return InlineKeyboardMarkup(rows)
 
 
@@ -140,10 +157,31 @@ def product_text(product: dict, index: int | None = None) -> str:
 def products_message(products: list[dict], heading: str, city: str | None = None) -> str:
     location = f" en {esc(city)}" if city else ""
     blocks = [f"<b>{esc(heading)}{location}</b>"]
-    for index, product in enumerate(products[:4], start=1):
+    for index, product in enumerate(products, start=1):
         blocks.append(product_text(product, index))
     blocks.append("Selecciona un producto para ver su ficha completa.")
     return "\n\n".join(blocks)
+
+
+PRODUCTS_PER_MESSAGE = 8
+
+
+async def send_product_chunks(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    products: list[dict],
+    heading: str,
+    city: str | None = None,
+) -> None:
+    """Envía todos los productos en bloques para respetar el límite de Telegram."""
+    for start in range(0, len(products), PRODUCTS_PER_MESSAGE):
+        chunk = products[start : start + PRODUCTS_PER_MESSAGE]
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=products_message(chunk, heading, city),
+            reply_markup=product_keyboard(chunk),
+            parse_mode="HTML",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -208,18 +246,33 @@ async def cmd_products(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def cmd_credit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = user_key(update)
-    await show_credit_preapproval(update.message, context, uid)
+    await show_credit_preapproval(context, update.effective_chat.id, uid)
+
+
+async def cmd_advisor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_advisor_status(context, update.effective_chat.id)
 
 
 async def cmd_mini(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not WEBAPP_ENABLED:
+        await update.message.reply_text(
+            "<b>Mini App no disponible</b>\n"
+            "Telegram solo permite abrir Mini Apps desde una URL pública HTTPS. "
+            "Mientras configuras un dominio o túnel, puedes usar /productos, "
+            "/credito o escribirme directamente por aquí.",
+            reply_markup=main_menu(),
+            parse_mode="HTML",
+        )
+        return
+
     await update.message.reply_text(
         "<b>Mini App del Asistente Jamar</b>\n"
         "Abre la experiencia completa sin salir de Telegram. Tu conversación se "
         "mantiene sincronizada con este chat.",
         reply_markup=InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("Abrir Mini App", web_app=WebAppInfo(url=webapp_url()))],
-                [InlineKeyboardButton("Simulador CrediJamar", web_app=WebAppInfo(url=webapp_url("&credit=1")))],
+                [webapp_button("Abrir Mini App", webapp_url())],
+                [webapp_button("Simulador CrediJamar", webapp_url("&credit=1"))],
             ]
         ),
         parse_mode="HTML",
@@ -233,6 +286,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/menu · Menú principal\n"
         "/productos · Explorar catálogo por categoría\n"
         "/credito · Consultar cupo CrediJamar\n"
+        "/asesor · Horario y solicitud de asesoría\n"
         "/mini · Abrir la Mini App\n"
         "/reset · Iniciar una conversación nueva\n\n"
         "También puedes escribir en lenguaje natural o enviar una foto de tu sala, "
@@ -255,12 +309,15 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def show_credit_preapproval(message, context: ContextTypes.DEFAULT_TYPE, uid: str) -> None:
+async def show_credit_preapproval(context: ContextTypes.DEFAULT_TYPE, chat_id: int, uid: str) -> None:
     data = await api_request(context, "GET", f"/api/credit/preapproval/{uid}")
     if not data:
-        await message.reply_text(
-            "No pude consultar tu cupo en este momento. Puedes intentarlo de nuevo "
-            "en unos segundos o abrir la Mini App.",
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "No pude consultar tu cupo en este momento. Puedes intentarlo de nuevo "
+                "en unos segundos o abrir la Mini App."
+            ),
             reply_markup=main_menu(),
         )
         return
@@ -273,14 +330,57 @@ async def show_credit_preapproval(message, context: ContextTypes.DEFAULT_TYPE, u
         "La cuota final depende del producto, la cuota inicial y el plazo. "
         "Puedes simular todos los escenarios en la Mini App."
     )
-    await message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("Simular en la Mini App", web_app=WebAppInfo(url=webapp_url("&credit=1")))],
-                [InlineKeyboardButton("Ver catálogo", callback_data="menu:catalog")],
-            ]
-        ),
+    rows = []
+    mini = webapp_button("Simular en la Mini App", webapp_url("&credit=1"))
+    if mini:
+        rows.append([mini])
+    rows.append([InlineKeyboardButton("Ver catálogo", callback_data="menu:catalog")])
+    rows.append([InlineKeyboardButton("Hablar con un asesor", callback_data="menu:advisor")])
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=InlineKeyboardMarkup(rows),
+        parse_mode="HTML",
+    )
+
+
+async def show_advisor_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    """Muestra el horario real y permite registrar la solicitud de asesoría."""
+    status = await api_request(context, "GET", "/api/advisor/status")
+    if not status:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="No pude consultar el horario de asesoría en este momento. Intenta de nuevo.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    if status.get("open"):
+        state = "abierto"
+        detail = f"Atendemos hasta {esc(status.get('closing_at_label'))}"
+    else:
+        state = "cerrado"
+        detail = (
+            f"Próxima apertura: {esc(status.get('next_opening_label'))}"
+            if status.get("next_opening_label")
+            else "La atención se reanudará en el próximo horario."
+        )
+
+    text = (
+        "<b>Asesoría personalizada</b>\n"
+        f"Estado: <b>Horario {state}</b>\n"
+        f"Horario: {esc(status.get('schedule'))}\n"
+        f"{detail}\n\n"
+        "Registra tu solicitud y un asesor recibirá el contexto de esta conversación."
+    )
+    rows = [
+        [InlineKeyboardButton("Registrar solicitud", callback_data="advisor:request")],
+        [InlineKeyboardButton("Volver al menú", callback_data="menu:home")],
+    ]
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=InlineKeyboardMarkup(rows),
         parse_mode="HTML",
     )
 
@@ -314,30 +414,77 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if data == "menu:credit":
+        rows = [
+            [InlineKeyboardButton("Consultar mi cupo", callback_data="credit:preapproval")],
+        ]
+        mini = webapp_button("Abrir simulador", webapp_url("&credit=1"))
+        if mini:
+            rows.append([mini])
+        rows.append([InlineKeyboardButton("Volver al menú", callback_data="menu:home")])
         await query.edit_message_text(
             "<b>CrediJamar</b>\nConsulta tu cupo pre-aprobado o abre el simulador completo.",
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("Consultar mi cupo", callback_data="credit:preapproval")],
-                    [InlineKeyboardButton("Abrir simulador", web_app=WebAppInfo(url=webapp_url("&credit=1")))],
-                    [InlineKeyboardButton("Volver al menú", callback_data="menu:home")],
-                ]
-            ),
+            reply_markup=InlineKeyboardMarkup(rows),
             parse_mode="HTML",
         )
         return
 
     if data == "credit:preapproval":
-        await show_credit_preapproval(chat, context, uid)
+        await show_credit_preapproval(context, chat.id, uid)
         return
 
     if data == "menu:advisor":
         await query.edit_message_text(
-            "<b>Asesoría personalizada</b>\nEscribe tu pregunta o el producto que te "
-            "interesa. Un asesor de Muebles Jamar recibirá el contexto de esta "
-            "conversación para continuar la atención.",
+            "<b>Asesoría personalizada</b>\nConsultando disponibilidad...",
+            parse_mode="HTML",
+        )
+        await show_advisor_status(context, chat.id)
+        return
+
+    if data == "advisor:request":
+        user = update.effective_user
+        handoff = await api_request(
+            context,
+            "POST",
+            "/api/advisor/request",
+            json={
+                "user_id": uid,
+                "session_id": uid,
+                "name": user.first_name if user else None,
+                "channel": "telegram",
+                "topic": "general",
+                "message": "Solicitud desde el menú de asesoría de Telegram.",
+            },
+        )
+        if not handoff:
+            await query.edit_message_text(
+                "No pude registrar la solicitud en este momento. Intenta de nuevo.",
+                reply_markup=main_menu(),
+            )
+            return
+
+        if handoff.get("available"):
+            detail = (
+                "Un asesor continuará la conversación en el horario de atención actual."
+            )
+        else:
+            detail = (
+                f"La próxima apertura es {esc(handoff.get('next_opening_label'))}"
+                if handoff.get("next_opening_label")
+                else "La solicitud se revisará cuando se reanude la atención."
+            )
+        text = (
+            "<b>Solicitud de asesoría registrada</b>\n"
+            f"Código: <b>{esc(handoff.get('request_id'))}</b>\n"
+            f"Horario: {esc(handoff.get('schedule'))}\n"
+            f"{detail}"
+        )
+        await query.edit_message_text(
+            text,
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Volver al menú", callback_data="menu:home")]]
+                [
+                    [InlineKeyboardButton("Ver catálogo", callback_data="menu:catalog")],
+                    [InlineKeyboardButton("Volver al menú", callback_data="menu:home")],
+                ]
             ),
             parse_mode="HTML",
         )
@@ -363,7 +510,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             context,
             "GET",
             "/api/products",
-            params={"category": category, "limit": 4},
+            params={"category": category, "limit": 50},
         )
         if not products:
             await chat.send_message(
@@ -372,10 +519,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 parse_mode="HTML",
             )
             return
-        await chat.send_message(
-            products_message(products, f"Opciones en {category}"),
-            reply_markup=product_keyboard(products),
-            parse_mode="HTML",
+        await send_product_chunks(
+            context,
+            chat.id,
+            products,
+            f"Opciones en {category}",
         )
         return
 
@@ -402,15 +550,16 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"<b>Descripción</b>\n{esc(product.get('description'))}\n\n"
             f"<b>Disponibilidad</b>\n{esc(stock_text)}"
         )
+        rows = [
+            [InlineKeyboardButton("Solicitar crédito", callback_data=f"credit:{product_id}")],
+        ]
+        mini = webapp_button("Abrir Mini App")
+        if mini:
+            rows.append([mini])
+        rows.append([InlineKeyboardButton("Volver al catálogo", callback_data="menu:catalog")])
         await chat.send_message(
             text,
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("Solicitar crédito", callback_data=f"credit:{product_id}")],
-                    [InlineKeyboardButton("Abrir Mini App", web_app=WebAppInfo(url=webapp_url()))],
-                    [InlineKeyboardButton("Volver al catálogo", callback_data="menu:catalog")],
-                ]
-            ),
+            reply_markup=InlineKeyboardMarkup(rows),
             parse_mode="HTML",
         )
         return
@@ -461,14 +610,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"Estado: <b>{esc(offer.get('status'))}</b>\n"
             f"{esc(offer.get('reason'))}"
         )
+        rows = []
+        mini = webapp_button("Ajustar en la Mini App", credit_url)
+        if mini:
+            rows.append([mini])
+        rows.append([InlineKeyboardButton("Ver más productos", callback_data="menu:catalog")])
         await chat.send_message(
             text,
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("Ajustar en la Mini App", web_app=WebAppInfo(url=credit_url))],
-                    [InlineKeyboardButton("Ver más productos", callback_data="menu:catalog")],
-                ]
-            ),
+            reply_markup=InlineKeyboardMarkup(rows),
             parse_mode="HTML",
         )
         return
@@ -498,6 +647,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "message": update.message.text[:2000],
             "user_id": uid,
             "session_id": uid,
+            "name": update.effective_user.first_name if update.effective_user else None,
             "channel": "telegram",
         },
     )
@@ -520,15 +670,28 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Plazo: {esc(credit.get('term_weeks'))} semanas"
         )
 
+    advisor = data.get("advisor")
+    if advisor:
+        next_text = (
+            f"\nPróxima apertura: {esc(advisor.get('next_opening_label'))}"
+            if advisor.get("next_opening_label")
+            else ""
+        )
+        reply += (
+            f"\n\n<b>Asesoría</b>\n"
+            f"Solicitud: <b>{esc(advisor.get('request_id'))}</b>\n"
+            f"Horario: {esc(advisor.get('schedule'))}{next_text}"
+        )
+
     products = data.get("products") or []
-    keyboard = product_keyboard(products) if products else main_menu()
-    await update.message.reply_text(reply, parse_mode="HTML", reply_markup=keyboard)
+    await update.message.reply_text(reply, parse_mode="HTML", reply_markup=main_menu())
 
     if products:
-        await update.message.reply_text(
-            products_message(products, "Opciones recomendadas"),
-            reply_markup=product_keyboard(products),
-            parse_mode="HTML",
+        await send_product_chunks(
+            context,
+            update.effective_chat.id,
+            products,
+            "Opciones recomendadas",
         )
 
 
@@ -580,14 +743,15 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         text,
         parse_mode="HTML",
-        reply_markup=product_keyboard(products) if products else main_menu(),
+        reply_markup=main_menu(),
     )
 
     if products:
-        await update.message.reply_text(
-            products_message(products, "Muebles compatibles"),
-            reply_markup=product_keyboard(products),
-            parse_mode="HTML",
+        await send_product_chunks(
+            context,
+            update.effective_chat.id,
+            products,
+            "Muebles compatibles",
         )
 
 
@@ -618,6 +782,7 @@ async def post_init(application: Application) -> None:
                 ("menu", "Menú principal"),
                 ("productos", "Explorar catálogo"),
                 ("credito", "Consultar CrediJamar"),
+                ("asesor", "Horario y solicitud de asesoría"),
                 ("mini", "Abrir la Mini App"),
                 ("reset", "Nueva conversación"),
                 ("ayuda", "Ver ayuda"),
@@ -657,6 +822,7 @@ def main() -> None:
     application.add_handler(CommandHandler("menu", cmd_menu))
     application.add_handler(CommandHandler("productos", cmd_products))
     application.add_handler(CommandHandler("credito", cmd_credit))
+    application.add_handler(CommandHandler("asesor", cmd_advisor))
     application.add_handler(CommandHandler("mini", cmd_mini))
     application.add_handler(CommandHandler("ayuda", cmd_help))
     application.add_handler(CommandHandler("help", cmd_help))
@@ -667,7 +833,7 @@ def main() -> None:
     application.add_error_handler(on_error)
 
     logger.info("Bot en modo polling")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
 
 
 if __name__ == "__main__":

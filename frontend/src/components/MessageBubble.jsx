@@ -1,6 +1,8 @@
 import {
   ArrowUpRight,
+  CalendarClock,
   CheckCircle2,
+  Headset,
   Info,
   Palette,
   ScanLine,
@@ -60,6 +62,40 @@ function AnalysisCard({ analysis }) {
         </div>
       )}
       {analysis.notes && <p className="mt-1.5 text-[10.5px] leading-relaxed text-stone-500">{analysis.notes}</p>}
+    </div>
+  );
+}
+
+function AdvisorSummary({ advisor }) {
+  return (
+    <div className="mt-2.5 rounded-xl border border-jamar/15 bg-jamar-mist/70 p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-jamar">
+          <Headset size={12} />
+          Asesoría
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold",
+            advisor.available
+              ? "border-jamar/20 bg-jamar-light text-jamar"
+              : "border-gold/30 bg-gold-light text-gold-dark",
+          )}
+        >
+          <CalendarClock size={10} />
+          {advisor.available ? "Horario abierto" : "Fuera de horario"}
+        </span>
+      </div>
+      <p className="mt-1.5 text-[11.5px] font-semibold text-stone-700">Solicitud {advisor.request_id}</p>
+      <p className="mt-0.5 text-[10.5px] leading-relaxed text-stone-500">{advisor.schedule}</p>
+      {advisor.available && advisor.closing_at_label && (
+        <p className="mt-1 text-[10.5px] text-stone-500">Atención hasta {advisor.closing_at_label}</p>
+      )}
+      {!advisor.available && advisor.next_opening_label && (
+        <p className="mt-1 text-[10.5px] font-medium text-jamar">
+          Próxima apertura: {advisor.next_opening_label}
+        </p>
+      )}
     </div>
   );
 }
@@ -135,8 +171,14 @@ export default function MessageBubble({ message, onCredit, onAdd, onSuggestion }
       : message.source === "heuristic"
         ? "Análisis local"
         : message.source === "demo"
-          ? "Modo demostración"
+          ? "Plantilla local"
           : null;
+  const dataSourceLabel =
+    message.dataSource === "snowflake"
+      ? "Datos Snowflake"
+      : message.dataSource === "demo"
+        ? "Datos demo"
+        : null;
 
   return (
     <div className="flex items-start gap-2 animate-fade-up">
@@ -151,6 +193,7 @@ export default function MessageBubble({ message, onCredit, onAdd, onSuggestion }
           <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-stone-700">{message.text}</p>
           {message.analysis && <AnalysisCard analysis={message.analysis} />}
           {message.credit && <CreditSummary offer={message.credit} onAdjust={onCredit} />}
+          {message.advisor && <AdvisorSummary advisor={message.advisor} />}
         </div>
 
         {message.products?.length > 0 && (
@@ -187,6 +230,12 @@ export default function MessageBubble({ message, onCredit, onAdd, onSuggestion }
             <>
               <span className="h-0.5 w-0.5 rounded-full bg-stone-300" />
               <span>{sourceLabel}</span>
+            </>
+          )}
+          {dataSourceLabel && (
+            <>
+              <span className="h-0.5 w-0.5 rounded-full bg-stone-300" />
+              <span>{dataSourceLabel}</span>
             </>
           )}
         </div>

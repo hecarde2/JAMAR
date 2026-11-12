@@ -25,9 +25,22 @@ import { hapticFeedback } from "../telegram";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
-function buildWelcome(telegram) {
-  const firstName = telegram?.user?.first_name;
+function readStoredName(telegram) {
+  try {
+    const stored = localStorage.getItem("jamar_user_name");
+    if (stored) return stored;
+  } catch {
+    // Almacenamiento no disponible; se usa el nombre de Telegram si existe.
+  }
+  return telegram?.user?.first_name || null;
+}
+
+function buildWelcome(telegram, userName) {
+  const firstName = (userName || telegram?.user?.first_name || "").split(" ")[0];
   const greeting = firstName ? `Hola, ${firstName}.` : "Hola.";
+  const prompt = firstName
+    ? "Cuéntame qué estás buscando o comparte una imagen de la habitación."
+    : "Para personalizar la asesoría, ¿cómo te llamas? También puedes contarme qué espacio quieres renovar.";
   return [
     {
       id: makeId(),
@@ -36,7 +49,7 @@ function buildWelcome(telegram) {
       text:
         `${greeting} Soy el Asistente Jamar. Te ayudo a amueblar tu hogar, consultar ` +
         "inventario por ciudad, analizar una foto de tu espacio y simular tu crédito " +
-        "CrediJamar. Cuéntame qué estás buscando o comparte una imagen de la habitación.",
+        `CrediJamar. ${prompt}`,
       suggestions: [
         "Buscar un sofá para mi sala",
         "Simular crédito CrediJamar",
@@ -71,7 +84,8 @@ export default function ChatWidget({
   creditRequest = 0,
   creditPreset = null,
 }) {
-  const [messages, setMessages] = useState(() => buildWelcome(telegram));
+  const [userName, setUserName] = useState(() => readStoredName(telegram));
+  const [messages, setMessages] = useState(() => buildWelcome(telegram, readStoredName(telegram)));
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
@@ -102,6 +116,17 @@ export default function ChatWidget({
       localStorage.setItem("jamar_session_id", value);
     } catch {
       // Almacenamiento no disponible; la sesión se mantiene en memoria.
+    }
+  }, []);
+
+  const persistName = useCallback((value) => {
+    const cleaned = (value || "").trim();
+    if (!cleaned) return;
+    setUserName(cleaned);
+    try {
+      localStorage.setItem("jamar_user_name", cleaned);
+    } catch {
+      // Almacenamiento no disponible; el nombre se mantiene en memoria.
     }
   }, []);
 
@@ -177,6 +202,7 @@ export default function ChatWidget({
           message: text.slice(0, 2000),
           session_id: sessionId,
           user_id: telegram?.userId || null,
+          name: userName || null,
           channel: telegram?.available ? "telegram" : "web",
         });
         const elapsed = Date.now() - startedAt;
@@ -187,10 +213,13 @@ export default function ChatWidget({
           text: data.reply,
           products: data.products || [],
           credit: data.credit || null,
+          advisor: data.advisor || null,
           suggestions: data.suggestions || [],
           source: data.source,
+          dataSource: data.data_source,
         });
         persistSession(data.session_id);
+        if (data.user_name) persistName(data.user_name);
         setStatus((previous) => ({ ...previous, state: "online" }));
         lastFailedRef.current = null;
         hapticFeedback("success");
@@ -207,7 +236,7 @@ export default function ChatWidget({
         setSending(false);
       }
     },
-    [appendMessage, input, persistSession, sending, sessionId, telegram],
+    [appendMessage, input, persistName, persistSession, sending, sessionId, telegram, userName],
   );
 
   const handleImage = useCallback(
@@ -317,14 +346,14 @@ export default function ChatWidget({
     } catch {
       // Si el backend no responde, igual se reinicia la vista local.
     }
-    setMessages(buildWelcome(telegram));
+    setMessages(buildWelcome(telegram, userName));
     setCart([]);
     setCartOpen(false);
     setCreditOpen(false);
     setInput("");
     persistSession(`web-${makeId()}`);
     showToast("Conversación reiniciada");
-  }, [persistSession, sessionId, showToast, telegram]);
+  }, [persistSession, sessionId, showToast, telegram, userName]);
 
   const handleClose = useCallback(() => {
     setCreditOpen(false);
@@ -681,6 +710,7 @@ export default function ChatWidget({
         initialPrice={creditSeed.price}
         productName={creditSeed.name}
         userId={telegram?.userId || null}
+        userName={userName}
         onAdvance={sendMessage}
       />
     </>

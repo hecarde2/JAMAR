@@ -22,10 +22,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from advisor import advisor_status, create_advisor_request
 from catalog import CATEGORY_KEYWORDS, CITY_NAMES, COLOR_KEYWORDS, demo_customer
 from config import get_settings
 from credit_engine import simulate_credit
-from schemas import ChatResponse, CreditOffer, Product
+from schemas import AdvisorHandoff, ChatResponse, CreditOffer, Product
 from snowflake_client import SnowflakeClient, get_snowflake_client, normalize_text
 
 logger = logging.getLogger(__name__)
@@ -33,13 +34,15 @@ logger = logging.getLogger(__name__)
 _INSTRUCTIONS_PATH = Path(__file__).resolve().parent / "prompts" / "agent_instructions.md"
 
 _FALLBACK_INSTRUCTIONS = (
-    "Eres el Asistente Jamar, asesor de interiores y ventas de Muebles Jamar en Colombia. "
-    "Hablas español colombiano, con tono cálido, profesional y directo. "
-    "Reglas obligatorias: no uses emojis ni Markdown; no inventes precios, stock ni condiciones "
-    "de crédito; usa exclusivamente el contexto entregado; si no hay productos adecuados dilo "
-    "con claridad; menciona precios en pesos colombianos con separador de miles; si hay una "
-    "oferta CrediJamar indica estado, cuota semanal y plazo; cierra con una sola pregunta de "
-    "seguimiento. Responde en máximo 150 palabras y evita listas extensas."
+    "Eres el Asistente Jamar, asesor de interiores, ventas y CrediJamar de Muebles Jamar en "
+    "Colombia. Hablas español colombiano, con tono cálido, profesional y directo. "
+    "Personaliza con el nombre del contexto; si no lo tienes, pídelo una sola vez. "
+    "Reglas obligatorias: no uses emojis ni Markdown; no inventes precios, stock, cuotas, "
+    "horarios ni condiciones de crédito; usa exclusivamente el contexto entregado; si no hay "
+    "productos adecuados dilo con claridad; menciona precios en pesos colombianos con separador "
+    "de miles; si hay una oferta CrediJamar indica estado, cuota semanal y plazo; si el cliente "
+    "pide un asesor usa el objeto asesor y confirma el código de solicitud o el horario real; "
+    "cierra con una sola pregunta de seguimiento. Responde en máximo 150 palabras."
 )
 
 
@@ -81,7 +84,7 @@ CREDIT_KEYWORDS = [
 ]
 VISION_KEYWORDS = ["foto", "fotografia", "fotografía", "imagen", "espacio", "analiza", "analizar", "decorar"]
 STOCK_KEYWORDS = ["disponible", "disponibilidad", "stock", "inventario", "en tienda", "hay en", "tienen en"]
-HUMAN_KEYWORDS = ["asesor", "humano", "persona", "vendedor", "agente real"]
+HUMAN_KEYWORDS = ["asesor", "asesora", "asesoría", "asesoria", "humano", "persona", "vendedor", "agente real"]
 ORDER_KEYWORDS = ["pedido", "rastrear", "rastreo", "envio", "envío", "entrega", "guia", "guía"]
 GREETING_KEYWORDS = ["hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches", "hey", "que tal", "qué tal"]
 PRODUCT_KEYWORDS = [
@@ -214,6 +217,73 @@ def extract_dimensions(message: str) -> Tuple[Optional[int], Optional[int]]:
     return None, None
 
 
+NAME_STOPWORDS = {
+    "y",
+    "e",
+    "de",
+    "del",
+    "la",
+    "el",
+    "los",
+    "las",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "para",
+    "por",
+    "con",
+    "en",
+    "que",
+    "quiero",
+    "busco",
+    "necesito",
+    "cliente",
+    "asesor",
+    "asesora",
+    "asesoria",
+    "asesoría",
+}
+
+NAME_PATTERNS = [
+    re.compile(
+        r"\b(?:me llamo|mi nombre es|puedes llamarme|llámame|llamame)\s+"
+        r"([^\W\d_]+(?:\s+[^\W\d_]+){0,3})",
+        re.IGNORECASE | re.UNICODE,
+    ),
+    re.compile(
+        r"^\s*(?:soy)\s+([^\W\d_]+(?:\s+[^\W\d_]+){0,3})",
+        re.IGNORECASE | re.UNICODE,
+    ),
+]
+
+
+def clean_name(value: str) -> Optional[str]:
+    """Normaliza un nombre recibido por API o Telegram."""
+    cleaned = re.sub(r"\s+", " ", (value or "").strip(" .,;:!?¡¿\t\n"))
+    if not cleaned:
+        return None
+    return " ".join(part.capitalize() for part in cleaned.split(" "))[:120]
+
+
+def extract_name(message: str) -> Optional[str]:
+    """Detecta presentaciones explícitas sin confundirlas con ciudades o roles."""
+    for pattern in NAME_PATTERNS:
+        match = pattern.search(message or "")
+        if not match:
+            continue
+        words: List[str] = []
+        for word in re.findall(r"[^\W\d_]+", match.group(1), flags=re.UNICODE):
+            if word.lower() in NAME_STOPWORDS:
+                break
+            words.append(word)
+            if len(words) == 3:
+                break
+        if words:
+            return clean_name(" ".join(words))
+    return None
+
+
 def extract_entities(message: str) -> Dict[str, Any]:
     """Extrae ciudad, categoría, color, presupuesto y datos de crédito."""
     normalized = normalize_text(message)
@@ -259,20 +329,20 @@ def _keyword_present(normalized: str, keyword: str) -> bool:
 def classify_intent(message: str, entities: Dict[str, Any]) -> str:
     """Clasificador de intenciones basado en reglas, rápido y explicable."""
     normalized = normalize_text(message)
-    if any(_keyword_present(normalized, word) for word in GREETING_KEYWORDS) and len(normalized.split()) <= 5:
-        return "greeting"
     if entities["mentions_vision"]:
         return "vision"
+    if entities["mentions_human"]:
+        return "human_handoff"
     if entities["mentions_credit"]:
         return "credit"
     if entities["mentions_stock"]:
         return "stock"
-    if any(_keyword_present(normalized, word) for word in HUMAN_KEYWORDS):
-        return "human_handoff"
     if any(normalize_text(word) in normalized for word in ORDER_KEYWORDS):
         return "order_status"
     if entities["category"] or any(normalize_text(word) in normalized for word in PRODUCT_KEYWORDS):
         return "product_search"
+    if any(_keyword_present(normalized, word) for word in GREETING_KEYWORDS) and len(normalized.split()) <= 5:
+        return "greeting"
     return "general"
 
 
@@ -282,6 +352,7 @@ class SessionStore:
     def __init__(self, max_messages: int = 16) -> None:
         self._sessions: Dict[str, List[Dict[str, str]]] = {}
         self._timestamps: Dict[str, str] = {}
+        self._names: Dict[str, str] = {}
         self._lock = threading.Lock()
         self._max_messages = max_messages
 
@@ -292,6 +363,17 @@ class SessionStore:
         if session_id and session_id.strip():
             return session_id.strip()[:128]
         return f"web:{uuid.uuid4().hex[:12]}"
+
+    def set_name(self, key: str, name: str) -> None:
+        cleaned = clean_name(name)
+        if not cleaned:
+            return
+        with self._lock:
+            self._names[key] = cleaned
+
+    def name(self, key: str) -> Optional[str]:
+        with self._lock:
+            return self._names.get(key)
 
     def append(self, key: str, role: str, content: str) -> None:
         with self._lock:
@@ -345,28 +427,57 @@ class JamarAgent:
         message: str,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        name: Optional[str] = None,
         city: Optional[str] = None,
         channel: str = "web",
     ) -> ChatResponse:
-        """Procesa un mensaje y devuelve texto, productos, crédito y sugerencias."""
+        """Procesa un mensaje y devuelve texto, productos, crédito y asesoría."""
         key = self.sessions.resolve_key(user_id, session_id)
+        if name:
+            self.sessions.set_name(key, name)
+        detected_name = extract_name(message)
+        if detected_name:
+            self.sessions.set_name(key, detected_name)
+        profile_name = self.sessions.name(key)
+
         entities = extract_entities(message)
         intent = classify_intent(message, entities)
         effective_city = city or entities.get("city")
 
         customer = None
-        if user_id or intent == "credit":
+        if user_id or intent in {"credit", "human_handoff"}:
             customer = self.repository.get_customer(user_id or f"web-{key.split(':')[-1]}")
+        if not profile_name and customer:
+            profile_name = clean_name(str(customer.get("name") or ""))
+            if profile_name:
+                self.sessions.set_name(key, profile_name)
 
         products: List[Dict[str, Any]] = []
-        if intent in {"product_search", "stock", "credit", "general", "greeting"}:
-            products = self._retrieve_products(message, entities, effective_city)
-        if intent == "vision":
+        if intent in {"product_search", "stock", "credit", "general", "greeting", "human_handoff"}:
             products = self._retrieve_products(message, entities, effective_city)
 
         credit_offer: Optional[CreditOffer] = None
         if entities.get("mentions_credit") or intent == "credit":
-            credit_offer = self._build_credit_offer(entities, products, customer)
+            credit_offer = self._build_credit_offer(entities, products, customer, profile_name)
+
+        advisor_snapshot = advisor_status()
+        advisor_handoff: Optional[AdvisorHandoff] = None
+        if intent == "human_handoff":
+            product = products[0] if products else None
+            topic = "credito" if (credit_offer or entities.get("mentions_credit")) else ("producto" if product else "general")
+            handoff = create_advisor_request(
+                user_id=user_id,
+                session_id=session_id or key,
+                name=profile_name,
+                city=effective_city,
+                channel=channel,
+                topic=topic,
+                message=message,
+                product_id=product.get("id") if product else None,
+                product_name=product.get("name") if product else None,
+                price=product.get("price") if product else entities.get("max_price"),
+            )
+            advisor_handoff = AdvisorHandoff(**handoff)
 
         if self._client is not None:
             reply = self._llm_reply(
@@ -378,13 +489,37 @@ class JamarAgent:
                 customer=customer,
                 key=key,
                 city=effective_city,
+                profile_name=profile_name,
+                advisor_snapshot=advisor_snapshot,
+                advisor_handoff=advisor_handoff,
+                channel=channel,
             )
             source = "gemini"
             if not reply:
-                reply = self._fallback_reply(intent, entities, products, credit_offer, customer, effective_city)
+                reply = self._fallback_reply(
+                    intent,
+                    entities,
+                    products,
+                    credit_offer,
+                    customer,
+                    effective_city,
+                    profile_name,
+                    advisor_handoff,
+                    detected_name,
+                )
                 source = "demo"
         else:
-            reply = self._fallback_reply(intent, entities, products, credit_offer, customer, effective_city)
+            reply = self._fallback_reply(
+                intent,
+                entities,
+                products,
+                credit_offer,
+                customer,
+                effective_city,
+                profile_name,
+                advisor_handoff,
+                detected_name,
+            )
             source = "demo"
 
         reply = strip_emojis(reply)
@@ -395,10 +530,13 @@ class JamarAgent:
             reply=reply,
             intent=intent,
             session_id=key,
-            products=[Product(**item) for item in products[:4]],
+            user_name=profile_name,
+            products=[Product(**item) for item in products],
             credit=credit_offer,
+            advisor=advisor_handoff,
             suggestions=self._suggestions(intent, products, credit_offer),
             source=source,
+            data_source=self.repository.mode,
         )
 
     def get_history(self, key: str) -> List[Dict[str, str]]:
@@ -416,23 +554,32 @@ class JamarAgent:
         entities: Dict[str, Any],
         city: Optional[str],
     ) -> List[Dict[str, Any]]:
-        """Busca productos y aplica un fallback de ciudad si no hay inventario local."""
+        """Busca productos y aplica fallbacks para no dejar el catálogo vacío."""
         products = self.repository.list_products(
             city=city,
             category=entities.get("category"),
             color=entities.get("color"),
             max_price=entities.get("max_price"),
             query=None if (entities.get("category") or entities.get("color")) else message,
-            limit=6,
+            limit=50,
         )
+        if not products:
+            products = self.repository.list_products(
+                city=city,
+                category=entities.get("category"),
+                color=entities.get("color"),
+                max_price=entities.get("max_price"),
+                query=None,
+                limit=50,
+            )
         if not products and city:
             products = self.repository.list_products(
                 city=None,
                 category=entities.get("category"),
                 color=entities.get("color"),
                 max_price=entities.get("max_price"),
-                query=message,
-                limit=6,
+                query=None,
+                limit=50,
             )
         return products
 
@@ -441,6 +588,7 @@ class JamarAgent:
         entities: Dict[str, Any],
         products: List[Dict[str, Any]],
         customer: Optional[Dict[str, Any]],
+        profile_name: Optional[str] = None,
     ) -> CreditOffer:
         """Genera la simulación CrediJamar a partir del mensaje o del producto."""
         price = None
@@ -450,7 +598,9 @@ class JamarAgent:
             price = entities.get("max_price") or 2_000_000
         term = entities.get("term_weeks") or 24
         down = entities.get("down_payment") or 0
-        profile = customer or demo_customer("invitado-jamar")
+        profile = dict(customer) if customer else demo_customer("invitado-jamar")
+        if profile_name:
+            profile["name"] = profile_name
         offer = simulate_credit(price=price, down_payment=down, term_weeks=term, customer=profile)
         return CreditOffer(**offer)
 
@@ -467,6 +617,10 @@ class JamarAgent:
         customer: Optional[Dict[str, Any]],
         key: str,
         city: Optional[str],
+        profile_name: Optional[str] = None,
+        advisor_snapshot: Optional[Dict[str, Any]] = None,
+        advisor_handoff: Optional[AdvisorHandoff] = None,
+        channel: str = "web",
     ) -> str:
         """Compone la respuesta con Google Gemini usando el contexto recuperado."""
         assert self._client is not None
@@ -488,13 +642,18 @@ class JamarAgent:
                 "ciudad": city,
                 "descripcion": item["description"],
             }
-            for item in products[:4]
+            for item in products[:12]
         ]
+        advisor_snapshot = advisor_snapshot or {}
         context: Dict[str, Any] = {
             "intencion": intent,
             "ciudad_detectada": city,
+            "usuario": {
+                "nombre": profile_name,
+                "canal": channel,
+            },
             "cliente": {
-                "nombre": customer.get("name") if customer else None,
+                "nombre": profile_name or (customer.get("name") if customer else None),
                 "segmento": customer.get("segment") if customer else None,
                 "ciudad": customer.get("city") if customer else None,
                 "score": customer.get("credit_score") if customer else None,
@@ -502,6 +661,17 @@ class JamarAgent:
             },
             "productos": compact_products,
             "credito": credit_offer.model_dump() if credit_offer else None,
+            "asesor": {
+                "disponible": advisor_snapshot.get("open"),
+                "horario": advisor_snapshot.get("schedule"),
+                "zona_horaria": advisor_snapshot.get("timezone"),
+                "hora_local": advisor_snapshot.get("local_time"),
+                "fecha_local": advisor_snapshot.get("local_date"),
+                "cierre": advisor_snapshot.get("closing_at_label"),
+                "siguiente_apertura": advisor_snapshot.get("next_opening_label"),
+                "mensaje": advisor_snapshot.get("message"),
+                "solicitud": advisor_handoff.model_dump() if advisor_handoff else None,
+            },
             "datos_extraidos": {
                 "presupuesto": entities.get("max_price"),
                 "categoria": entities.get("category"),
@@ -524,21 +694,38 @@ class JamarAgent:
             )
         contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
 
-        try:
-            response = self._client.models.generate_content(
-                model=self.settings.gemini_model,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.4,
-                    max_output_tokens=450,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
-                ),
-            )
-            return (response.text or "").strip()
-        except Exception:
-            logger.exception("Fallo al generar respuesta con Gemini; se usa plantilla local")
-            return ""
+        candidates: List[str] = []
+        for name in (
+            self.settings.gemini_model,
+            "gemini-2.5-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-flash-latest",
+        ):
+            if name and name not in candidates:
+                candidates.append(name)
+
+        for model_name in candidates:
+            try:
+                response = self._client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        temperature=0.4,
+                        max_output_tokens=450,
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    ),
+                )
+                text = (response.text or "").strip()
+                if text:
+                    if model_name != self.settings.gemini_model:
+                        logger.info("Gemini respondió con el modelo alterno %s", model_name)
+                    return text
+                logger.warning("Gemini devolvió una respuesta vacía con %s", model_name)
+            except Exception as exc:
+                logger.warning("Fallo al generar respuesta con Gemini (%s): %s", model_name, exc)
+        logger.error("No fue posible generar respuesta con Gemini; se usa plantilla local")
+        return ""
 
     def _fallback_reply(
         self,
@@ -548,25 +735,60 @@ class JamarAgent:
         credit_offer: Optional[CreditOffer],
         customer: Optional[Dict[str, Any]],
         city: Optional[str],
+        profile_name: Optional[str] = None,
+        advisor_handoff: Optional[AdvisorHandoff] = None,
+        detected_name: Optional[str] = None,
     ) -> str:
         """Plantillas profesionales para operación sin motor generativo."""
-        name = (customer or {}).get("name", "").split(" ")[0]
+        name = (profile_name or detected_name or (customer or {}).get("name", "")).split(" ")[0]
+
+        if detected_name and intent in {"general", "greeting"}:
+            return (
+                f"Un gusto, {clean_name(detected_name)}. Soy el Asistente Jamar y puedo "
+                "ayudarte con catálogo, disponibilidad, análisis de fotos, CrediJamar y "
+                "asesoría personalizada. ¿Qué espacio quieres renovar o qué producto buscas?"
+            )
 
         if intent == "greeting":
-            greeting = f"Hola, {name}. " if name else "Hola. "
+            if name:
+                return (
+                    f"Hola, {name}. Soy el Asistente Jamar y puedo ayudarte a amueblar tu "
+                    "hogar, consultar disponibilidad por ciudad, analizar una foto de tu "
+                    "espacio y simular tu crédito CrediJamar. ¿Qué espacio quieres renovar?"
+                )
             return (
-                greeting
-                + "Soy el Asistente Jamar y puedo ayudarte a amueblar tu hogar, consultar "
-                "disponibilidad por ciudad, analizar una foto de tu espacio y simular tu "
-                "crédito CrediJamar. ¿Qué espacio quieres renovar?"
+                "Hola. Soy el Asistente Jamar y puedo ayudarte a amueblar tu hogar, "
+                "consultar disponibilidad por ciudad, analizar una foto de tu espacio y "
+                "simular tu crédito CrediJamar. Para personalizar la asesoría, ¿cómo te "
+                "llamas y qué espacio quieres renovar?"
             )
 
         if intent == "human_handoff":
+            if advisor_handoff:
+                prefix = f"Listo, {name}. " if name else "Listo. "
+                if advisor_handoff.available:
+                    return (
+                        f"{prefix}Registré tu solicitud {advisor_handoff.request_id} para "
+                        "asesoría personalizada. Un asesor de Muebles Jamar continuará la "
+                        f"conversación en el horario de atención actual. Horario: {advisor_handoff.schedule}. "
+                        "¿Quieres dejar algún detalle adicional sobre el producto o la ciudad?"
+                    )
+                next_text = (
+                    f" La próxima apertura es {advisor_handoff.next_opening_label}"
+                    if advisor_handoff.next_opening_label
+                    else ""
+                )
+                return (
+                    f"{prefix}Registré tu solicitud {advisor_handoff.request_id} para "
+                    "asesoría personalizada. En este momento el horario está cerrado."
+                    f"{next_text} Horario de atención: {advisor_handoff.schedule}. "
+                    "Un asesor revisará el contexto de esta conversación. "
+                    "¿Quieres que revise mientras tanto productos o una simulación CrediJamar?"
+                )
             return (
                 "Puedo conectar tu caso con un asesor especializado de Muebles Jamar. "
                 "Cuéntame qué producto te interesa y en qué ciudad estás para transferir "
-                "el contexto completo. "
-                "¿Deseas que prepare el resumen de la conversación?"
+                "el contexto completo. ¿Deseas que prepare el resumen de la conversación?"
             )
 
         if intent == "order_status":
@@ -592,7 +814,7 @@ class JamarAgent:
             if city:
                 intro = f"Estas son las opciones disponibles para {city}:"
             lines = [intro]
-            for item in products[:3]:
+            for item in products[:10]:
                 stock_note = (
                     f"{item['stock']} unidades en {city}"
                     if city
@@ -666,6 +888,8 @@ class JamarAgent:
             return ["Analizar otra foto", "Buscar sala en Bogotá", "Simular crédito"]
         if intent == "greeting":
             return ["Buscar un sofá", "Simular crédito CrediJamar", "Analizar una foto de mi sala"]
+        if intent == "human_handoff":
+            return ["Ver catálogo", "Simular crédito CrediJamar", "Consultar disponibilidad"]
         return ["Ver catálogo", "Consultar disponibilidad", "Hablar con un asesor"]
 
 

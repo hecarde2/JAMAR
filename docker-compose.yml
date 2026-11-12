@@ -15,6 +15,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./secrets:/run/secrets:ro
     restart: unless-stopped
     healthcheck:
       test:

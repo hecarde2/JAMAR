@@ -54,6 +54,8 @@ export const api = {
   vision: (formData) => request("/api/vision", { method: "POST", body: formData, isForm: true }),
   creditCheck: (payload) => request("/api/credit-check", { method: "POST", body: payload }),
   creditConfig: () => request("/api/credit/config"),
+  advisorStatus: () => request("/api/advisor/status"),
+  advisorRequest: (payload) => request("/api/advisor/request", { method: "POST", body: payload }),
   products: (params = {}) => {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {

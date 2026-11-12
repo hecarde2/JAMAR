@@ -468,6 +468,43 @@ CREATE OR REPLACE TABLE JAMAR_DW.PUBLIC.CUSTOMER_360 (
 - El campo `IMAGEN` debe ser un nombre de archivo disponible en `frontend/public/products/`. Para usar un CDN externo hay que ajustar `productImage` en `frontend/src/utils.js`.
 - La app no escribe en Snowflake. La solicitud formal de crédito se gestiona con un asesor.
 
+### Autenticación por par de claves (recomendada para Docker)
+
+No requiere PAT ni navegador. La clave privada se monta en el contenedor como
+`/run/secrets/snowflake_private_key.pem` y el backend la lee al conectar.
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt -out secrets/snowflake_private_key.pem
+chmod 644 secrets/snowflake_private_key.pem
+openssl rsa -in secrets/snowflake_private_key.pem -pubout -out /tmp/snowflake_public_key.pem
+grep -v -- '-----' /tmp/snowflake_public_key.pem | tr -d '\n' > /tmp/snowflake_public_key.txt
+```
+
+Registra la clave pública en Snowflake:
+
+```sql
+ALTER USER <usuario> SET RSA_PUBLIC_KEY='<contenido de /tmp/snowflake_public_key.txt>';
+```
+
+Configura el `.env` y arranca con Docker:
+
+```env
+SNOWFLAKE_ACCOUNT=<organizacion>-<cuenta>
+SNOWFLAKE_USER=<usuario>
+SNOWFLAKE_AUTHENTICATOR=SNOWFLAKE_JWT
+SNOWFLAKE_PRIVATE_KEY_PATH=/run/secrets/snowflake_private_key.pem
+SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=
+```
+
+```bash
+docker compose up --build -d
+docker compose logs -f backend
+```
+
+Si la clave está cifrada, define `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`. Para ejecutar
+el backend fuera de Docker, apunta `SNOWFLAKE_PRIVATE_KEY_PATH` a la ruta local del PEM.
+También puedes inyectar el PEM en base64 con `SNOWFLAKE_PRIVATE_KEY_B64`.
+
 ### Autenticación `externalbrowser`
 
 `externalbrowser` abre el navegador del sistema para completar el inicio de sesión SSO y

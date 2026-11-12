@@ -42,6 +42,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     session_id: Optional[str] = Field(default=None, max_length=128)
     user_id: Optional[str] = Field(default=None, max_length=128)
+    name: Optional[str] = Field(default=None, max_length=120)
     channel: Channel = "web"
     city: Optional[str] = Field(default=None, max_length=80)
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -59,6 +60,7 @@ class CreditSimulationRequest(BaseModel):
     down_payment: float = Field(default=0, ge=0, le=100_000_000)
     term_weeks: int = Field(default=24, ge=4, le=104)
     user_id: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=120)
     product_id: Optional[str] = None
     city: Optional[str] = None
 
@@ -100,16 +102,64 @@ class VisionAnalysis(BaseModel):
     source: str = "heuristic"
 
 
+class AdvisorStatus(BaseModel):
+    """Disponibilidad actual del equipo de asesores."""
+
+    open: bool
+    timezone: str
+    schedule: str
+    local_time: str
+    local_date: str
+    closing_at: Optional[str] = None
+    closing_at_label: Optional[str] = None
+    next_opening: Optional[str] = None
+    next_opening_label: Optional[str] = None
+    message: str
+
+
+class AdvisorHandoff(BaseModel):
+    """Solicitud de asesoría registrada para el cliente."""
+
+    request_id: str
+    status: str
+    available: bool
+    schedule: str
+    timezone: str
+    created_at: str
+    closing_at_label: Optional[str] = None
+    next_opening: Optional[str] = None
+    next_opening_label: Optional[str] = None
+    message: str
+
+
+class AdvisorRequestBody(BaseModel):
+    """Datos mínimos para registrar una solicitud de asesoría."""
+
+    user_id: Optional[str] = Field(default=None, max_length=128)
+    session_id: Optional[str] = Field(default=None, max_length=128)
+    name: Optional[str] = Field(default=None, max_length=120)
+    city: Optional[str] = Field(default=None, max_length=80)
+    channel: Channel = "web"
+    topic: str = Field(default="general", max_length=40)
+    message: str = Field(default="", max_length=2000)
+    product_id: Optional[str] = None
+    product_name: Optional[str] = Field(default=None, max_length=200)
+    price: Optional[float] = Field(default=None, ge=0)
+
+
 class ChatResponse(BaseModel):
     """Respuesta unificada del agente."""
 
     reply: str
     intent: str
     session_id: str
+    user_name: Optional[str] = None
     products: List[Product] = Field(default_factory=list)
     credit: Optional[CreditOffer] = None
+    advisor: Optional[AdvisorHandoff] = None
     suggestions: List[str] = Field(default_factory=list)
     source: str = "demo"
+    data_source: str = "demo"
 
 
 class VisionResponse(BaseModel):

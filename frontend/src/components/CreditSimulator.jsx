@@ -36,6 +36,7 @@ export default function CreditSimulator({
   initialPrice = 2_000_000,
   productName = null,
   userId = null,
+  userName = null,
   onAdvance,
 }) {
   const [price, setPrice] = useState(initialPrice);
@@ -76,6 +77,7 @@ export default function CreditSimulator({
           down_payment: downPayment,
           term_weeks: term,
           user_id: userId || null,
+          name: userName || null,
         });
         if (!cancelled) setOffer(data);
       } catch (requestError) {
@@ -92,7 +94,7 @@ export default function CreditSimulator({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, price, downPct, term, userId]);
+  }, [open, price, downPct, term, userId, userName]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -289,6 +291,7 @@ export default function CreditSimulator({
                     <SummaryRow label="Intereses totales" value={formatCop(offer.total_interest)} />
                     <SummaryRow label="Total a pagar" value={formatCop(offer.total_to_pay)} emphasize />
                     <SummaryRow label="Cupo pre-aprobado" value={formatCop(offer.max_amount)} />
+                    {offer.customer_name && <SummaryRow label="Titular" value={offer.customer_name} />}
                   </div>
 
                   <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-white px-2.5 py-2 text-[10.5px] leading-relaxed text-stone-500">

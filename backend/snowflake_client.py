@@ -21,6 +21,7 @@ CUSTOMER_360
 
 from __future__ import annotations
 
+import base64
 import logging
 import re
 import threading
@@ -107,6 +108,52 @@ class SnowflakeClient:
             "SNOWFLAKE_FALLBACK_DEMO=true para usar datos de demostración."
         )
 
+    def _load_private_key(self) -> bytes:
+        """Carga la clave privada RSA y la devuelve en DER PKCS#8.
+
+        Acepta una ruta a un PEM o el PEM codificado en base64, útil cuando la
+        clave se inyecta por variable de entorno en Docker.
+        """
+        from cryptography.hazmat.primitives import serialization
+
+        path = self.settings.snowflake_private_key_path.strip()
+        encoded = self.settings.snowflake_private_key_b64.strip()
+        if encoded:
+            try:
+                pem = base64.b64decode(encoded, validate=False)
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError(
+                    "SNOWFLAKE_PRIVATE_KEY_B64 no es base64 válido."
+                ) from exc
+        elif path:
+            try:
+                with open(path, "rb") as key_file:
+                    pem = key_file.read()
+            except OSError as exc:
+                raise RuntimeError(
+                    f"No se pudo leer la clave privada de Snowflake en {path!r}."
+                ) from exc
+        else:
+            raise RuntimeError(
+                "La autenticación por par de claves requiere "
+                "SNOWFLAKE_PRIVATE_KEY_PATH o SNOWFLAKE_PRIVATE_KEY_B64."
+            )
+
+        passphrase = self.settings.snowflake_private_key_passphrase
+        password = passphrase.encode("utf-8") if passphrase else None
+        try:
+            key = serialization.load_pem_private_key(pem, password=password)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(
+                "No se pudo decodificar la clave privada de Snowflake. "
+                "Verifica el formato PKCS#8 y la passphrase."
+            ) from exc
+        return key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+
     def _connect(self):
         """Abre una conexión usando el conector oficial de Snowflake."""
         import snowflake.connector  # importación diferida
@@ -128,6 +175,9 @@ class SnowflakeClient:
             params["authenticator"] = "externalbrowser"
             if self.settings.snowflake_client_store_temporary_credential:
                 params["client_store_temporary_credential"] = True
+        elif authenticator.lower() in {"snowflake_jwt", "jwt", "keypair"}:
+            params["authenticator"] = "SNOWFLAKE_JWT"
+            params["private_key"] = self._load_private_key()
         elif authenticator.lower() == "programmatic_access_token" or self.settings.snowflake_token.strip():
             params["authenticator"] = "PROGRAMMATIC_ACCESS_TOKEN"
             params["token"] = token
@@ -145,6 +195,30 @@ class SnowflakeClient:
             if self._connection is None or getattr(self._connection, "is_closed", lambda: True)():
                 self._connection = self._connect()
             return self._connection
+
+    def check_connection(self, probe_tables: Sequence[str] = ()) -> Dict[str, Any]:
+        """Valida la conexión y devuelve metadatos de la sesión.
+
+        Si se indican nombres de tabla, también cuenta sus filas para comprobar
+        permisos de lectura sobre el esquema configurado.
+        """
+        if not self.configured:
+            raise RuntimeError(
+                "Snowflake no está configurado. Completa SNOWFLAKE_ACCOUNT, "
+                "SNOWFLAKE_USER y la credencial correspondiente."
+            )
+        info = self._query(
+            "SELECT CURRENT_VERSION() AS version, CURRENT_ACCOUNT() AS account, "
+            "CURRENT_USER() AS user, CURRENT_DATABASE() AS database, "
+            "CURRENT_SCHEMA() AS schema, CURRENT_WAREHOUSE() AS warehouse, "
+            "CURRENT_ROLE() AS role"
+        )[0]
+        info["tables"] = {}
+        for name in probe_tables:
+            table = self._table(name)
+            rows = self._query(f"SELECT COUNT(*) AS total FROM {table}")[0]
+            info["tables"][table] = _as_int(rows.get("total"))
+        return info
 
     def close(self) -> None:
         """Cierra la conexión activa, si existe."""
@@ -243,7 +317,7 @@ class SnowflakeClient:
         color: Optional[str] = None,
         max_price: Optional[float] = None,
         query: Optional[str] = None,
-        limit: int = 12,
+        limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """Busca productos en inventario aplicando filtros opcionales."""
         limit = max(1, min(int(limit), 50))

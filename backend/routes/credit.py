@@ -18,6 +18,9 @@ def credit_check(payload: CreditSimulationRequest) -> CreditOffer:
     try:
         repository = get_snowflake_client()
         customer = repository.get_customer(payload.user_id) if payload.user_id else demo_customer("invitado-jamar")
+        if payload.name:
+            customer = dict(customer or demo_customer("invitado-jamar"))
+            customer["name"] = payload.name.strip()[:120]
         offer = simulate_credit(
             price=payload.price,
             down_payment=payload.down_payment,

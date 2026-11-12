@@ -19,7 +19,7 @@ def list_products(
     color: Optional[str] = Query(default=None, description="Color del producto"),
     max_price: Optional[float] = Query(default=None, ge=0, description="Presupuesto máximo en COP"),
     q: Optional[str] = Query(default=None, description="Texto libre"),
-    limit: int = Query(default=12, ge=1, le=50),
+    limit: int = Query(default=50, ge=1, le=50),
 ) -> List[Product]:
     """Filtra el inventario por ciudad, categoría, color y presupuesto."""
     items = get_snowflake_client().list_products(
