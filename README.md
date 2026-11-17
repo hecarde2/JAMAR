@@ -65,11 +65,11 @@ Telegram Bot ---------------------+
 
 En Docker Compose existen tres servicios:
 
-| Servicio   | Contenedor       | Función                                                        | Puerto por defecto  |
-| ---------- | ---------------- | -------------------------------------------------------------- | ------------------- |
-| `backend`  | `jamar-backend`  | API FastAPI, agente, crédito, visión y acceso a datos          | `8000`              |
-| `frontend` | `jamar-frontend` | Aplicación React servida por nginx; proxy de `/api` al backend | `3000`              |
-| `bot`      | `jamar-bot`      | Bot de Telegram e integración con la API                       | Sin puerto expuesto |
+| Servicio     | Contenedor         | Función                                                          | Puerto por defecto  |
+| ------------ | ------------------ | ----------------------------------------------------------------- | ------------------- |
+| `backend`  | `jamar-backend`  | API FastAPI, agente, crédito, visión y acceso a datos           | `8000`            |
+| `frontend` | `jamar-frontend` | Aplicación React servida por nginx; proxy de `/api` al backend | `3000`            |
+| `bot`      | `jamar-bot`      | Bot de Telegram e integración con la API                         | Sin puerto expuesto |
 
 El frontend y el bot se comunican con el backend por la red interna `jamar-net`. Solo el frontend y el backend publican puertos al host.
 
@@ -176,6 +176,10 @@ GEMINI_API_KEY=tu_clave_de_google_ai_studio
 
 Sin esta clave el asistente funciona con plantillas locales y la visión usa un análisis heurístico.
 
+NOTA:  CREA UN ARCHIVO snowflake_private_key.pem (ingresa la clave secreta de snowflake
+
+
+
 ### 4. Configurar integraciones opcionales
 
 - Telegram: define `TELEGRAM_BOT_TOKEN` y una `PUBLIC_WEBAPP_URL` accesible por Telegram.
@@ -206,15 +210,15 @@ docker compose up --build -d
 
 Con los puertos por defecto:
 
-| Recurso                   | URL                                      |
-| ------------------------- | ---------------------------------------- |
+| Recurso                    | URL                                        |
+| -------------------------- | ------------------------------------------ |
 | Página principal y widget | `http://localhost:3000`                  |
-| Widget embebible          | `http://localhost:3000/?embed=1`         |
+| Widget embebible           | `http://localhost:3000/?embed=1`         |
 | Simulador de crédito      | `http://localhost:3000/?open=1&credit=1` |
-| API                       | `http://localhost:8000`                  |
-| Swagger UI                | `http://localhost:8000/docs`             |
-| ReDoc                     | `http://localhost:8000/redoc`            |
-| Healthcheck               | `http://localhost:8000/api/health`       |
+| API                        | `http://localhost:8000`                  |
+| Swagger UI                 | `http://localhost:8000/docs`             |
+| ReDoc                      | `http://localhost:8000/redoc`            |
+| Healthcheck                | `http://localhost:8000/api/health`       |
 
 Si los puertos `3000` u `8000` están ocupados, cambia `FRONTEND_PORT` y `BACKEND_PORT` en `.env` antes de iniciar.
 
@@ -224,68 +228,68 @@ Toda la configuración se carga desde variables de entorno o desde `.env`. En Do
 
 ### Aplicación y red
 
-| Variable               | Valor por defecto                             | Descripción                                                                                                         |
-| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `ENVIRONMENT`          | `production`                                  | Entorno de ejecución. En local puedes usar `development`.                                                           |
-| `LOG_LEVEL`            | `INFO`                                        | Nivel de logs de backend y bot.                                                                                     |
-| `FRONTEND_PORT`        | `3000`                                        | Puerto público del frontend.                                                                                        |
-| `BACKEND_PORT`         | `8000`                                        | Puerto público del backend.                                                                                         |
-| `CORS_ORIGINS`         | `http://localhost:3000,http://localhost:5173` | Orígenes permitidos, separados por coma.                                                                            |
-| `PUBLIC_WEBAPP_URL`    | `http://localhost:3000`                       | URL pública que abre el bot en Telegram. Debe ser HTTPS y accesible desde Internet para la Mini App.                |
+| Variable                 | Valor por defecto                               | Descripción                                                                                                            |
+| ------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `ENVIRONMENT`          | `production`                                  | Entorno de ejecución. En local puedes usar `development`.                                                            |
+| `LOG_LEVEL`            | `INFO`                                        | Nivel de logs de backend y bot.                                                                                         |
+| `FRONTEND_PORT`        | `3000`                                        | Puerto público del frontend.                                                                                           |
+| `BACKEND_PORT`         | `8000`                                        | Puerto público del backend.                                                                                            |
+| `CORS_ORIGINS`         | `http://localhost:3000,http://localhost:5173` | Orígenes permitidos, separados por coma.                                                                               |
+| `PUBLIC_WEBAPP_URL`    | `http://localhost:3000`                       | URL pública que abre el bot en Telegram. Debe ser HTTPS y accesible desde Internet para la Mini App.                   |
 | `ASSET_BASE_URL`       | `http://localhost:3000/products`              | Variable reservada para futuras URLs de imágenes. El frontend actual resuelve imágenes desde `/products/<archivo>`. |
-| `BACKEND_INTERNAL_URL` | `http://backend:8000`                         | Variable reservada. El bot usa `API_BASE_URL` para comunicarse con el backend.                                      |
+| `BACKEND_INTERNAL_URL` | `http://backend:8000`                         | Variable reservada. El bot usa `API_BASE_URL` para comunicarse con el backend.                                        |
 
 ### Google Gemini
 
-| Variable                 | Valor por defecto  | Descripción                                                             |
-| ------------------------ | ------------------ | ----------------------------------------------------------------------- |
-| `GEMINI_API_KEY`         | vacío              | API key de Google AI Studio. Si está vacía, se usan plantillas locales. |
-| `GEMINI_MODEL`           | `gemini-2.5-flash` | Modelo para generación de texto.                                        |
+| Variable                   | Valor por defecto    | Descripción                                                              |
+| -------------------------- | -------------------- | ------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`         | vacío               | API key de Google AI Studio. Si está vacía, se usan plantillas locales. |
+| `GEMINI_MODEL`           | `gemini-2.5-flash` | Modelo para generación de texto.                                         |
 | `GEMINI_VISION_MODEL`    | `gemini-2.5-flash` | Modelo para análisis de imágenes.                                       |
-| `GEMINI_TIMEOUT_SECONDS` | `40`               | Tiempo máximo de espera de la API de Gemini.                            |
+| `GEMINI_TIMEOUT_SECONDS` | `40`               | Tiempo máximo de espera de la API de Gemini.                             |
 
 ### Snowflake
 
-| Variable                                      | Valor por defecto      | Descripción                                                                                                                                                               |
-| --------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SNOWFLAKE_ACCOUNT`                           | vacío                  | Identificador de cuenta de Snowflake.                                                                                                                                     |
-| `SNOWFLAKE_USER`                              | vacío                  | Usuario de conexión.                                                                                                                                                      |
-| `SNOWFLAKE_TOKEN`                             | vacío                  | PAT (Programmatic Access Token) emitido por Snowflake. Al definirlo se activa la autenticación por token.                                                                 |
-| `SNOWFLAKE_PASSWORD`                          | vacío                  | Contraseña tradicional del usuario. También se acepta como nombre antiguo de la variable PAT si se configura `PROGRAMMATIC_ACCESS_TOKEN`. Ignorada con `externalbrowser`. |
-| `SNOWFLAKE_AUTHENTICATOR`                     | vacío                  | Método de autenticación. Vacío = usuario/contraseña o PAT si se define `SNOWFLAKE_TOKEN`. Usa `externalbrowser` para SSO.                                                 |
-| `SNOWFLAKE_CLIENT_STORE_TEMPORARY_CREDENTIAL` | `false`                | Solo con `externalbrowser`: guarda el token SSO para reutilizarlo sin abrir el navegador de nuevo.                                                                        |
-| `SNOWFLAKE_DATABASE`                          | `JAMAR_DW`             | Base de datos.                                                                                                                                                            |
-| `SNOWFLAKE_SCHEMA`                            | `PUBLIC`               | Esquema.                                                                                                                                                                  |
-| `SNOWFLAKE_WAREHOUSE`                         | `JAMAR_WH`             | Warehouse usado en las consultas.                                                                                                                                         |
-| `SNOWFLAKE_ROLE`                              | vacío                  | Rol opcional. Se recomienda un rol de solo lectura.                                                                                                                       |
-| `SNOWFLAKE_INVENTORY_TABLE`                   | `INVENTARIO_PRODUCTOS` | Tabla de inventario.                                                                                                                                                      |
-| `SNOWFLAKE_CUSTOMER_TABLE`                    | `CUSTOMER_360`         | Tabla de perfiles Customer 360.                                                                                                                                           |
-| `SNOWFLAKE_FALLBACK_DEMO`                     | `false`                | Si es `true`, usa datos demo cuando Snowflake no está configurado o una consulta falla. Por defecto los errores se muestran para evitar datos demo inesperados.           |
+| Variable                                        | Valor por defecto        | Descripción                                                                                                                                                                    |
+| ----------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SNOWFLAKE_ACCOUNT`                           | vacío                   | Identificador de cuenta de Snowflake.                                                                                                                                           |
+| `SNOWFLAKE_USER`                              | vacío                   | Usuario de conexión.                                                                                                                                                           |
+| `SNOWFLAKE_TOKEN`                             | vacío                   | PAT (Programmatic Access Token) emitido por Snowflake. Al definirlo se activa la autenticación por token.                                                                      |
+| `SNOWFLAKE_PASSWORD`                          | vacío                   | Contraseña tradicional del usuario. También se acepta como nombre antiguo de la variable PAT si se configura `PROGRAMMATIC_ACCESS_TOKEN`. Ignorada con `externalbrowser`. |
+| `SNOWFLAKE_AUTHENTICATOR`                     | vacío                   | Método de autenticación. Vacío = usuario/contraseña o PAT si se define `SNOWFLAKE_TOKEN`. Usa `externalbrowser` para SSO.                                               |
+| `SNOWFLAKE_CLIENT_STORE_TEMPORARY_CREDENTIAL` | `false`                | Solo con `externalbrowser`: guarda el token SSO para reutilizarlo sin abrir el navegador de nuevo.                                                                            |
+| `SNOWFLAKE_DATABASE`                          | `JAMAR_DW`             | Base de datos.                                                                                                                                                                  |
+| `SNOWFLAKE_SCHEMA`                            | `PUBLIC`               | Esquema.                                                                                                                                                                        |
+| `SNOWFLAKE_WAREHOUSE`                         | `JAMAR_WH`             | Warehouse usado en las consultas.                                                                                                                                               |
+| `SNOWFLAKE_ROLE`                              | vacío                   | Rol opcional. Se recomienda un rol de solo lectura.                                                                                                                             |
+| `SNOWFLAKE_INVENTORY_TABLE`                   | `INVENTARIO_PRODUCTOS` | Tabla de inventario.                                                                                                                                                            |
+| `SNOWFLAKE_CUSTOMER_TABLE`                    | `CUSTOMER_360`         | Tabla de perfiles Customer 360.                                                                                                                                                 |
+| `SNOWFLAKE_FALLBACK_DEMO`                     | `false`                | Si es `true`, usa datos demo cuando Snowflake no está configurado o una consulta falla. Por defecto los errores se muestran para evitar datos demo inesperados.              |
 
 ### Telegram
 
-| Variable             | Valor por defecto       | Descripción                                                                                       |
-| -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
-| `TELEGRAM_BOT_TOKEN` | vacío                   | Token entregado por `@BotFather`. Si está vacío, el contenedor del bot queda activo sin conexión. |
-| `PUBLIC_WEBAPP_URL`  | `http://localhost:3000` | URL pública del frontend usada por los botones de Mini App.                                       |
-| `API_BASE_URL`       | `http://backend:8000`   | URL interna del backend usada por el bot. Compose la define automáticamente.                      |
+| Variable               | Valor por defecto         | Descripción                                                                                           |
+| ---------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `TELEGRAM_BOT_TOKEN` | vacío                    | Token entregado por `@BotFather`. Si está vacío, el contenedor del bot queda activo sin conexión. |
+| `PUBLIC_WEBAPP_URL`  | `http://localhost:3000` | URL pública del frontend usada por los botones de Mini App.                                           |
+| `API_BASE_URL`       | `http://backend:8000`   | URL interna del backend usada por el bot. Compose la define automáticamente.                          |
 
 ### CrediJamar
 
-| Variable                      | Valor por defecto | Descripción                                      |
-| ----------------------------- | ----------------- | ------------------------------------------------ |
-| `CREDIT_WEEKLY_RATE`          | `0.0045`          | Tasa semanal usada en la amortización.           |
-| `CREDIT_MAX_TERM_WEEKS`       | `52`              | Plazo máximo permitido.                          |
-| `CREDIT_MIN_DOWN_PAYMENT_PCT` | `0.10`            | Cuota inicial mínima como porcentaje del precio. |
+| Variable                        | Valor por defecto | Descripción                                      |
+| ------------------------------- | ----------------- | ------------------------------------------------- |
+| `CREDIT_WEEKLY_RATE`          | `0.0045`        | Tasa semanal usada en la amortización.           |
+| `CREDIT_MAX_TERM_WEEKS`       | `52`            | Plazo máximo permitido.                          |
+| `CREDIT_MIN_DOWN_PAYMENT_PCT` | `0.10`          | Cuota inicial mínima como porcentaje del precio. |
 
 ### Variables opcionales del frontend en desarrollo
 
 Se definen en `frontend/.env.local`, no en el `.env` raíz:
 
-| Variable            | Valor por defecto       | Descripción                                                     |
-| ------------------- | ----------------------- | --------------------------------------------------------------- |
-| `VITE_PROXY_TARGET` | `http://localhost:8000` | Destino del proxy de Vite para `/api`.                          |
-| `VITE_API_BASE_URL` | vacío                   | URL absoluta de la API si el frontend no usa el proxy relativo. |
+| Variable              | Valor por defecto         | Descripción                                                    |
+| --------------------- | ------------------------- | --------------------------------------------------------------- |
+| `VITE_PROXY_TARGET` | `http://localhost:8000` | Destino del proxy de Vite para `/api`.                        |
+| `VITE_API_BASE_URL` | vacío                    | URL absoluta de la API si el frontend no usa el proxy relativo. |
 
 ## Configurar Google Gemini
 
@@ -298,13 +302,11 @@ Se definen en `frontend/.env.local`, no en el `.env` raíz:
    GEMINI_MODEL=gemini-2.5-flash
    GEMINI_VISION_MODEL=gemini-2.5-flash
    ```
-
 4. Reinicia el backend:
 
    ```bash
    docker compose up -d --force-recreate backend
    ```
-
 5. Verifica que la IA esté habilitada:
 
    ```bash
@@ -380,43 +382,43 @@ El backend consulta dos tablas. Los nombres son configurables, pero las columnas
 
 Una fila representa un producto en una ciudad. El mismo `PRODUCT_ID` puede aparecer varias veces con distinta `CIUDAD` y `STOCK`.
 
-| Columna          | Tipo sugerido | Uso                                              |
-| ---------------- | ------------- | ------------------------------------------------ |
-| `PRODUCT_ID`     | VARCHAR       | Identificador único del producto.                |
-| `SKU`            | VARCHAR       | Código comercial.                                |
+| Columna            | Tipo sugerido | Uso                                              |
+| ------------------ | ------------- | ------------------------------------------------ |
+| `PRODUCT_ID`     | VARCHAR       | Identificador único del producto.               |
+| `SKU`            | VARCHAR       | Código comercial.                               |
 | `NOMBRE`         | VARCHAR       | Nombre visible.                                  |
 | `CATEGORIA`      | VARCHAR       | Sala, Comedor, Alcoba, Almacenamiento u Oficina. |
-| `SUBCATEGORIA`   | VARCHAR       | Tipo específico de mueble.                       |
+| `SUBCATEGORIA`   | VARCHAR       | Tipo específico de mueble.                      |
 | `COLOR`          | VARCHAR       | Color principal.                                 |
 | `COLOR_HEX`      | VARCHAR       | Color en formato hexadecimal.                    |
 | `PRECIO`         | NUMBER        | Precio en COP.                                   |
-| `ANCHO_CM`       | NUMBER        | Ancho en centímetros.                            |
-| `PROFUNDIDAD_CM` | NUMBER        | Profundidad en centímetros.                      |
-| `ALTO_CM`        | NUMBER        | Alto en centímetros.                             |
+| `ANCHO_CM`       | NUMBER        | Ancho en centímetros.                           |
+| `PROFUNDIDAD_CM` | NUMBER        | Profundidad en centímetros.                     |
+| `ALTO_CM`        | NUMBER        | Alto en centímetros.                            |
 | `MATERIAL`       | VARCHAR       | Materiales principales.                          |
-| `DESCRIPCION`    | VARCHAR       | Descripción comercial.                           |
-| `IMAGEN`         | VARCHAR       | Nombre del archivo servido en `/products/`.      |
-| `RATING`         | FLOAT         | Calificación de 0 a 5.                           |
+| `DESCRIPCION`    | VARCHAR       | Descripción comercial.                          |
+| `IMAGEN`         | VARCHAR       | Nombre del archivo servido en `/products/`.    |
+| `RATING`         | FLOAT         | Calificación de 0 a 5.                          |
 | `CIUDAD`         | VARCHAR       | Ciudad donde hay inventario.                     |
 | `STOCK`          | NUMBER        | Unidades disponibles en esa ciudad.              |
 
 ### Tabla `CUSTOMER_360`
 
-| Columna                  | Tipo sugerido | Uso                                           |
-| ------------------------ | ------------- | --------------------------------------------- |
+| Columna                    | Tipo sugerido | Uso                                             |
+| -------------------------- | ------------- | ----------------------------------------------- |
 | `USER_ID`                | VARCHAR       | Identidad del cliente, por ejemplo `tg-1001`. |
-| `NOMBRE`                 | VARCHAR       | Nombre completo.                              |
-| `DOCUMENTO`              | VARCHAR       | Documento enmascarado.                        |
-| `CIUDAD`                 | VARCHAR       | Ciudad del cliente.                           |
-| `SEGMENTO`               | VARCHAR       | Segmento comercial.                           |
-| `COMPRAS`                | NUMBER        | Número de compras.                            |
-| `TICKET_PROMEDIO`        | NUMBER        | Ticket promedio en COP.                       |
-| `ULTIMA_COMPRA`          | DATE          | Fecha de la última compra.                    |
-| `CATEGORIAS_PREFERIDAS`  | VARCHAR       | Categorías separadas por coma.                |
-| `INGRESO_MENSUAL`        | NUMBER        | Ingreso mensual estimado.                     |
-| `OBLIGACIONES_MENSUALES` | NUMBER        | Obligaciones financieras mensuales.           |
-| `SCORE_CREDITO`          | NUMBER        | Score usado por CrediJamar.                   |
-| `CUPO_CREDIJAMAR`        | NUMBER        | Cupo máximo pre-aprobado.                     |
+| `NOMBRE`                 | VARCHAR       | Nombre completo.                                |
+| `DOCUMENTO`              | VARCHAR       | Documento enmascarado.                          |
+| `CIUDAD`                 | VARCHAR       | Ciudad del cliente.                             |
+| `SEGMENTO`               | VARCHAR       | Segmento comercial.                             |
+| `COMPRAS`                | NUMBER        | Número de compras.                             |
+| `TICKET_PROMEDIO`        | NUMBER        | Ticket promedio en COP.                         |
+| `ULTIMA_COMPRA`          | DATE          | Fecha de la última compra.                     |
+| `CATEGORIAS_PREFERIDAS`  | VARCHAR       | Categorías separadas por coma.                 |
+| `INGRESO_MENSUAL`        | NUMBER        | Ingreso mensual estimado.                       |
+| `OBLIGACIONES_MENSUALES` | NUMBER        | Obligaciones financieras mensuales.             |
+| `SCORE_CREDITO`          | NUMBER        | Score usado por CrediJamar.                     |
+| `CUPO_CREDIJAMAR`        | NUMBER        | Cupo máximo pre-aprobado.                      |
 
 ### Ejemplo de DDL
 
@@ -530,7 +532,6 @@ Pasos:
    pip install -r requirements.txt
    uvicorn main:app --host 0.0.0.0 --port 8000
    ```
-
 3. En la primera consulta se abre el navegador. Completa el login y el backend recibe el token.
    Con `SNOWFLAKE_CLIENT_STORE_TEMPORARY_CREDENTIAL=true` el token se reutiliza mientras sea válido.
 
@@ -545,11 +546,11 @@ Para contenedores o servidores sin navegador se recomienda autenticación por pa
 
 ### Parámetros de URL
 
-| Parámetro           | Ejemplo                                             | Efecto                                                          |
-| ------------------- | --------------------------------------------------- | --------------------------------------------------------------- |
+| Parámetro            | Ejemplo                                               | Efecto                                                          |
+| --------------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
 | `open=1`            | `/?open=1`                                          | Abre el widget al cargar.                                       |
 | `embed=1`           | `/?embed=1`                                         | Oculta la landing y muestra solo el widget a pantalla completa. |
-| `credit=1`          | `/?open=1&credit=1`                                 | Abre directamente el simulador de crédito.                      |
+| `credit=1`          | `/?open=1&credit=1`                                 | Abre directamente el simulador de crédito.                     |
 | `price=2499000`     | `/?open=1&credit=1&price=2499000`                   | Precarga el precio en el simulador.                             |
 | `name=Sofa%20Miami` | `/?open=1&credit=1&price=2499000&name=Sofa%20Miami` | Muestra el nombre del producto en el simulador.                 |
 
@@ -597,15 +598,15 @@ https://asistente.tu-dominio.com/?open=1&credit=1&price=2549000&name=Cama%20Urib
 
 ## Comandos del bot
 
-| Comando            | Función                                             |
-| ------------------ | --------------------------------------------------- |
-| `/start`           | Inicia la conversación y muestra el menú principal. |
-| `/menu`            | Muestra el menú principal.                          |
-| `/productos`       | Abre el catálogo por categorías.                    |
-| `/credito`         | Consulta el cupo pre-aprobado CrediJamar.           |
-| `/mini`            | Abre la Mini App y el simulador.                    |
-| `/ayuda` o `/help` | Muestra la ayuda.                                   |
-| `/reset`           | Reinicia el historial de la conversación.           |
+| Comando                | Función                                              |
+| ---------------------- | ----------------------------------------------------- |
+| `/start`             | Inicia la conversación y muestra el menú principal. |
+| `/menu`              | Muestra el menú principal.                           |
+| `/productos`         | Abre el catálogo por categorías.                    |
+| `/credito`           | Consulta el cupo pre-aprobado CrediJamar.             |
+| `/mini`              | Abre la Mini App y el simulador.                      |
+| `/ayuda` o `/help` | Muestra la ayuda.                                     |
+| `/reset`             | Reinicia el historial de la conversación.            |
 
 Además de los comandos, el bot acepta:
 
@@ -621,22 +622,22 @@ La API está montada bajo el prefijo `/api`. La documentación interactiva está
 
 ### Endpoints
 
-| Método   | Ruta                                | Descripción                                             |
-| -------- | ----------------------------------- | ------------------------------------------------------- |
-| `GET`    | `/`                                 | Información básica del servicio.                        |
-| `GET`    | `/api/health`                       | Estado del backend, modo de datos, IA y Telegram.       |
-| `POST`   | `/api/chat`                         | Procesa un mensaje del usuario.                         |
-| `GET`    | `/api/chat/history/{session_id}`    | Consulta el historial de una sesión.                    |
+| Método    | Ruta                                  | Descripción                                               |
+| ---------- | ------------------------------------- | ---------------------------------------------------------- |
+| `GET`    | `/`                                 | Información básica del servicio.                         |
+| `GET`    | `/api/health`                       | Estado del backend, modo de datos, IA y Telegram.          |
+| `POST`   | `/api/chat`                         | Procesa un mensaje del usuario.                            |
+| `GET`    | `/api/chat/history/{session_id}`    | Consulta el historial de una sesión.                      |
 | `DELETE` | `/api/chat/history/{session_id}`    | Reinicia una sesión. Acepta `user_id` como query param. |
-| `POST`   | `/api/vision`                       | Analiza una imagen y recomienda productos.              |
-| `POST`   | `/api/credit-check`                 | Simula y evalúa una solicitud CrediJamar.               |
-| `GET`    | `/api/credit/preapproval/{user_id}` | Consulta cupo y perfil financiero.                      |
-| `GET`    | `/api/credit/config`                | Parámetros públicos del simulador.                      |
-| `GET`    | `/api/products`                     | Busca productos con filtros.                            |
-| `GET`    | `/api/products/{product_id}`        | Detalle de un producto.                                 |
-| `GET`    | `/api/inventory/summary`            | Resumen de inventario por categoría.                    |
-| `GET`    | `/api/cities`                       | Ciudades con cobertura y número de tiendas.             |
-| `GET`    | `/api/customer/{user_id}`           | Perfil Customer 360.                                    |
+| `POST`   | `/api/vision`                       | Analiza una imagen y recomienda productos.                 |
+| `POST`   | `/api/credit-check`                 | Simula y evalúa una solicitud CrediJamar.                 |
+| `GET`    | `/api/credit/preapproval/{user_id}` | Consulta cupo y perfil financiero.                         |
+| `GET`    | `/api/credit/config`                | Parámetros públicos del simulador.                       |
+| `GET`    | `/api/products`                     | Busca productos con filtros.                               |
+| `GET`    | `/api/products/{product_id}`        | Detalle de un producto.                                    |
+| `GET`    | `/api/inventory/summary`            | Resumen de inventario por categoría.                      |
+| `GET`    | `/api/cities`                       | Ciudades con cobertura y número de tiendas.               |
+| `GET`    | `/api/customer/{user_id}`           | Perfil Customer 360.                                       |
 
 ### Ejemplo de conversación
 
@@ -669,13 +670,13 @@ curl "http://localhost:8000/api/products?city=Medellin&category=Sala&max_price=3
 
 Parámetros soportados:
 
-| Parámetro   | Tipo    | Descripción                         |
-| ----------- | ------- | ----------------------------------- |
-| `city`      | string  | Ciudad de entrega.                  |
-| `category`  | string  | Categoría o subcategoría.           |
-| `color`     | string  | Color del producto.                 |
+| Parámetro    | Tipo    | Descripción                         |
+| ------------- | ------- | ------------------------------------ |
+| `city`      | string  | Ciudad de entrega.                   |
+| `category`  | string  | Categoría o subcategoría.          |
+| `color`     | string  | Color del producto.                  |
 | `max_price` | number  | Presupuesto máximo en COP.          |
-| `q`         | string  | Texto libre.                        |
+| `q`         | string  | Texto libre.                         |
 | `limit`     | integer | Máximo de resultados, entre 1 y 50. |
 
 ### Ejemplo de análisis de imagen
@@ -747,11 +748,11 @@ El motor es determinista y no escribe en Snowflake.
 
 ### Estados
 
-| Estado                | Significado                                             |
-| --------------------- | ------------------------------------------------------- |
+| Estado                  | Significado                                              |
+| ----------------------- | -------------------------------------------------------- |
 | `pre_aprobado`        | El perfil cumple las políticas para continuar.          |
 | `requiere_validacion` | El monto supera el cupo o requiere revisión documental. |
-| `no_aprobado`         | No cumple score, cupo o capacidad de pago.              |
+| `no_aprobado`         | No cumple score, cupo o capacidad de pago.               |
 
 La respuesta siempre incluye un aviso de que la aprobación definitiva la confirma un asesor CrediJamar.
 
