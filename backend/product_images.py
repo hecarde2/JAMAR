@@ -65,6 +65,12 @@ def _remove_solid_background(image: Image.Image) -> Image.Image:
 
 def load_product_rgba(filename: str) -> Image.Image:
     path = resolve_product_image_path(filename)
+    cutout = path.with_name(f"{path.stem}-cutout{path.suffix}")
+    if cutout.is_file():
+        with Image.open(cutout) as image:
+            image.load()
+            return ImageOps.exif_transpose(image).convert("RGBA")
+
     with Image.open(path) as image:
         image.load()
         return _remove_solid_background(image)
