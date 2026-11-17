@@ -18,6 +18,7 @@ import CreditSimulator from "./CreditSimulator";
 import ImageUploader from "./ImageUploader";
 import Launcher from "./Launcher";
 import MessageBubble from "./MessageBubble";
+import PhotoComposer from "./PhotoComposer";
 import TypingIndicator from "./TypingIndicator";
 import { cn, delay, formatCop, makeId, productImage } from "../utils";
 import { hapticFeedback } from "../telegram";
@@ -99,6 +100,8 @@ export default function ChatWidget({
   const [toast, setToast] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [roomType, setRoomType] = useState("Sala");
+  const [roomPhoto, setRoomPhoto] = useState(null);
+  const [composerProduct, setComposerProduct] = useState(null);
 
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -252,6 +255,7 @@ export default function ChatWidget({
       }
 
       const preview = URL.createObjectURL(file);
+      setRoomPhoto({ file, url: preview });
       appendMessage({ role: "user", text: "Analiza este espacio", image: preview });
       setSending(true);
       setAnalysisBusy(true);
@@ -316,6 +320,21 @@ export default function ChatWidget({
     [showToast],
   );
 
+  const saveComposition = useCallback(
+    ({ url, product }) => {
+      appendMessage({
+        role: "assistant",
+        text: `Así se vería el ${product.name} en tu espacio. Ajusta cualquier mueble desde su tarjeta si quieres otra vista.`,
+        renderedImage: url,
+        renderedProduct: product,
+      });
+      setComposerProduct(null);
+      showToast("Vista previa guardada en el chat");
+      hapticFeedback("success");
+    },
+    [appendMessage, showToast],
+  );
+
   const updateQuantity = useCallback((id, delta) => {
     setCart((previous) =>
       previous
@@ -349,6 +368,8 @@ export default function ChatWidget({
     setMessages(buildWelcome(telegram, userName));
     setCart([]);
     setCartOpen(false);
+    setRoomPhoto(null);
+    setComposerProduct(null);
     setCreditOpen(false);
     setInput("");
     persistSession(`web-${makeId()}`);
@@ -604,6 +625,7 @@ export default function ChatWidget({
                     message={message}
                     onCredit={openCredit}
                     onAdd={addToCart}
+                    onPreview={roomPhoto ? setComposerProduct : null}
                     onSuggestion={handleSuggestion}
                   />
                 ))}
@@ -703,6 +725,16 @@ export default function ChatWidget({
           </div>
         )}
       </div>
+
+      {roomPhoto && composerProduct && (
+        <PhotoComposer
+          photo={roomPhoto}
+          product={composerProduct}
+          onClose={() => setComposerProduct(null)}
+          onSave={saveComposition}
+          onError={showToast}
+        />
+      )}
 
       <CreditSimulator
         open={creditOpen}

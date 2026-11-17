@@ -13,10 +13,12 @@ services:
       ENVIRONMENT: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      PRODUCT_IMAGES_DIR: /app/product_images
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./secrets:/run/secrets:ro
+      - ./frontend/public/products:/app/product_images:ro
     restart: unless-stopped
     healthcheck:
       test:

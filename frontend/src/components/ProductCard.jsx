@@ -1,11 +1,20 @@
-import { CreditCard, MapPin, Palette, Package, Ruler, ShoppingBag, Star } from "lucide-react";
+import {
+  CreditCard,
+  Image as ImageIcon,
+  MapPin,
+  Palette,
+  Package,
+  Ruler,
+  ShoppingBag,
+  Star,
+} from "lucide-react";
 import { formatCop, productImage } from "../utils";
 
 /**
  * Tarjeta de producto embebida en la conversación.
  * Prioriza precio, dimensiones y disponibilidad antes de invitar a la acción.
  */
-export default function ProductCard({ product, onCredit, onAdd }) {
+export default function ProductCard({ product, onCredit, onAdd, onPreview }) {
   const inStock = Number(product.stock) > 0;
   const stockLabel = inStock
     ? `${product.stock} ${product.stock === 1 ? "unidad" : "unidades"}${product.city ? ` en ${product.city}` : " disponibles"}`
@@ -67,6 +76,17 @@ export default function ProductCard({ product, onCredit, onAdd }) {
           <p className="text-base font-bold tracking-tight text-jamar">{formatCop(product.price)}</p>
           <span className="text-[10px] text-stone-400">IVA incluido</span>
         </div>
+
+        {onPreview && (
+          <button
+            type="button"
+            onClick={() => onPreview(product)}
+            className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-jamar/30 bg-jamar-mist px-2 py-2 text-[11px] font-semibold text-jamar transition hover:border-jamar/60 hover:bg-jamar-light focus:outline-none focus-visible:ring-2 focus-visible:ring-jamar/30"
+          >
+            <ImageIcon size={13} />
+            Ver en mi foto
+          </button>
+        )}
 
         <div className="mt-2.5 grid grid-cols-2 gap-2">
           <button

@@ -11,6 +11,7 @@ Requiere `TELEGRAM_BOT_TOKEN`, `API_BASE_URL` (backend) y `PUBLIC_WEBAPP_URL`
 from __future__ import annotations
 
 import html
+import io
 import logging
 import os
 import time
@@ -18,8 +19,10 @@ from urllib.parse import quote
 
 import httpx
 from telegram import (
+    InputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputMediaPhoto,
     Update,
     WebAppInfo,
 )
@@ -39,6 +42,7 @@ PUBLIC_WEBAPP_URL = os.getenv("PUBLIC_WEBAPP_URL", "http://localhost:3000").rstr
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 CATEGORIES = ["Sala", "Comedor", "Alcoba", "Almacenamiento", "Oficina"]
+COMPOSE_DEFAULTS = {"x": 50.0, "y": 68.0, "scale": 0.45, "rotation": 0.0}
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -124,16 +128,20 @@ def category_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def product_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton(
-                f"Ver {short(product.get('name', 'producto'), 30)}",
-                callback_data=f"prod:{product.get('id')}",
-            )
-        ]
-        for product in products
-    ]
+def product_keyboard(products: list[dict], can_compose: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    for product in products:
+        label = short(product.get("name", "producto"), 26)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"🖼️ Ver {label} en mi foto" if can_compose else f"Ver {label}",
+                    callback_data=(
+                        f"comp:{product.get('id')}" if can_compose else f"prod:{product.get('id')}"
+                    ),
+                )
+            ]
+        )
     mini = webapp_button("Abrir Mini App")
     if mini:
         rows.append([mini])
@@ -172,6 +180,7 @@ async def send_product_chunks(
     products: list[dict],
     heading: str,
     city: str | None = None,
+    can_compose: bool = False,
 ) -> None:
     """Envía todos los productos en bloques para respetar el límite de Telegram."""
     for start in range(0, len(products), PRODUCTS_PER_MESSAGE):
@@ -179,7 +188,7 @@ async def send_product_chunks(
         await context.bot.send_message(
             chat_id=chat_id,
             text=products_message(chunk, heading, city),
-            reply_markup=product_keyboard(chunk),
+            reply_markup=product_keyboard(chunk, can_compose=can_compose),
             parse_mode="HTML",
         )
 
@@ -209,6 +218,129 @@ async def api_request(
     except Exception:
         logger.exception("Error de comunicación con la API en %s %s", method, path)
         return None
+
+
+def compose_keyboard(product_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("⬅️", callback_data=f"cadj:left:{product_id}"),
+                InlineKeyboardButton("➡️", callback_data=f"cadj:right:{product_id}"),
+                InlineKeyboardButton("⬆️", callback_data=f"cadj:up:{product_id}"),
+                InlineKeyboardButton("⬇️", callback_data=f"cadj:down:{product_id}"),
+            ],
+            [
+                InlineKeyboardButton("➕ Grande", callback_data=f"cadj:bigger:{product_id}"),
+                InlineKeyboardButton("➖ Pequeño", callback_data=f"cadj:smaller:{product_id}"),
+                InlineKeyboardButton("↻ Girar", callback_data=f"cadj:rotate:{product_id}"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Reiniciar", callback_data=f"cadj:reset:{product_id}"),
+                InlineKeyboardButton("✅ Listo", callback_data="cadj:done"),
+            ],
+        ]
+    )
+
+
+def apply_compose_action(state: dict, action: str) -> None:
+    if action == "left":
+        state["x"] = max(2, state["x"] - 5)
+    elif action == "right":
+        state["x"] = min(98, state["x"] + 5)
+    elif action == "up":
+        state["y"] = max(2, state["y"] - 5)
+    elif action == "down":
+        state["y"] = min(98, state["y"] + 5)
+    elif action == "bigger":
+        state["scale"] = min(1.2, round(state["scale"] + 0.05, 3))
+    elif action == "smaller":
+        state["scale"] = max(0.1, round(state["scale"] - 0.05, 3))
+    elif action == "rotate":
+        state["rotation"] = (state["rotation"] + 15) % 360
+        if state["rotation"] > 180:
+            state["rotation"] -= 360
+    elif action == "reset":
+        name = state.get("name")
+        state.clear()
+        state.update(COMPOSE_DEFAULTS)
+        if name:
+            state["name"] = name
+
+
+async def get_product_photo(context: ContextTypes.DEFAULT_TYPE, product_id: str) -> bytes | None:
+    client: httpx.AsyncClient = context.application.bot_data["http"]
+    try:
+        response = await client.get(f"/api/products/{product_id}/image")
+        response.raise_for_status()
+        return response.content
+    except Exception:
+        logger.warning("No fue posible cargar la imagen del producto %s", product_id)
+        return None
+
+
+async def compose_photo(
+    context: ContextTypes.DEFAULT_TYPE,
+    product_id: str,
+    state: dict,
+) -> bytes | None:
+    room = context.user_data.get("room_photo")
+    if not room:
+        return None
+    client: httpx.AsyncClient = context.application.bot_data["http"]
+    try:
+        response = await client.post(
+            "/api/compose",
+            files={"file": ("espacio.jpg", room, "image/jpeg")},
+            data={
+                "product_id": product_id,
+                "x": state["x"],
+                "y": state["y"],
+                "scale": state["scale"],
+                "rotation": state["rotation"],
+            },
+        )
+        response.raise_for_status()
+        return response.content
+    except Exception:
+        logger.exception("No fue posible componer el producto %s sobre la foto", product_id)
+        return None
+
+
+async def show_composition(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat,
+    product_id: str,
+    state: dict,
+    message=None,
+) -> bool:
+    image_bytes = await compose_photo(context, product_id, state)
+    if not image_bytes:
+        text = "No pude generar la vista previa. Intenta enviar la foto nuevamente."
+        if message is not None:
+            await message.edit_message_caption(caption=text)
+        else:
+            await chat.send_message(text)
+        return False
+
+    caption = (
+        "<b>Vista previa en tu espacio</b>\n"
+        f"Producto: {esc(state.get('name') or product_id)}\n"
+        "Usa las flechas para moverlo y los botones para ajustar tamaño o rotación."
+    )
+    photo = InputFile(io.BytesIO(image_bytes), filename="jamar-vista-previa.png")
+    if message is not None:
+        await message.edit_message_media(
+            media=InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
+            reply_markup=compose_keyboard(product_id),
+        )
+    else:
+        await chat.send_photo(
+            photo=photo,
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=compose_keyboard(product_id),
+        )
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +429,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = user_key(update)
+    context.user_data.pop("room_photo", None)
+    context.user_data.pop("compose", None)
     await api_request(
         context,
         "DELETE",
@@ -524,7 +658,46 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             chat.id,
             products,
             f"Opciones en {category}",
+            can_compose=bool(context.user_data.get("room_photo")),
         )
+        return
+
+    if data.startswith("comp:"):
+        product_id = data.split(":", 1)[1]
+        if not context.user_data.get("room_photo"):
+            await chat.send_message(
+                "Envíame primero una foto de tu espacio y luego selecciona un producto "
+                "para ver cómo quedaría."
+            )
+            return
+        await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.UPLOAD_PHOTO)
+        product = await api_request(context, "GET", f"/api/products/{product_id}")
+        state = dict(COMPOSE_DEFAULTS)
+        state["name"] = (product or {}).get("name") or product_id
+        context.user_data["compose"] = state
+        await show_composition(context, chat, product_id, state)
+        return
+
+    if data.startswith("cadj:"):
+        parts = data.split(":", 2)
+        action = parts[1] if len(parts) > 1 else ""
+        product_id = parts[2] if len(parts) > 2 else ""
+        state = context.user_data.get("compose") or dict(COMPOSE_DEFAULTS)
+        state.setdefault("name", product_id)
+        if action == "done":
+            context.user_data.pop("compose", None)
+            await query.edit_message_caption(
+                caption=(
+                    f"<b>Vista previa de {esc(state['name'])}</b>\n"
+                    "Cuando quieras, selecciona otro mueble para comparar."
+                ),
+                parse_mode="HTML",
+                reply_markup=None,
+            )
+            return
+        apply_compose_action(state, action)
+        context.user_data["compose"] = state
+        await show_composition(context, chat, product_id, state, message=query.message)
         return
 
     if data.startswith("prod:"):
@@ -553,6 +726,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         rows = [
             [InlineKeyboardButton("Solicitar crédito", callback_data=f"credit:{product_id}")],
         ]
+        if context.user_data.get("room_photo"):
+            rows.append(
+                [InlineKeyboardButton("🖼️ Ver en mi foto", callback_data=f"comp:{product_id}")]
+            )
         mini = webapp_button("Abrir Mini App")
         if mini:
             rows.append([mini])
@@ -562,6 +739,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             reply_markup=InlineKeyboardMarkup(rows),
             parse_mode="HTML",
         )
+        photo_bytes = await get_product_photo(context, product_id)
+        if photo_bytes:
+            await chat.send_photo(
+                photo=InputFile(io.BytesIO(photo_bytes), filename="producto-jamar.png"),
+                caption=f"<b>{esc(product.get('name'))}</b> · {cop(product.get('price'))}",
+                parse_mode="HTML",
+            )
         return
 
     if data.startswith("credit:"):
@@ -692,6 +876,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             update.effective_chat.id,
             products,
             "Opciones recomendadas",
+            can_compose=bool(context.user_data.get("room_photo")),
         )
 
 
@@ -707,6 +892,8 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         photo = update.message.photo[-1]
         file = await photo.get_file()
         content = bytes(await file.download_as_bytearray())
+        context.user_data["room_photo"] = content
+        context.user_data.pop("compose", None)
     except Exception:
         logger.exception("No fue posible descargar la foto de Telegram")
         await update.message.reply_text(
@@ -752,6 +939,7 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             update.effective_chat.id,
             products,
             "Muebles compatibles",
+            can_compose=True,
         )
 
 

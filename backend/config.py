@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     public_webapp_url: str = "http://localhost:3000"
     asset_base_url: str = "http://localhost:3000/products"
     backend_internal_url: str = "http://backend:8000"
+    product_images_dir: str = "../frontend/public/products"
 
     # --- CrediJamar ---
     credit_weekly_rate: float = 0.0045

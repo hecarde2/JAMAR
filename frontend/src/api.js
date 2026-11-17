@@ -48,10 +48,36 @@ async function request(path, { method = "GET", body, isForm = false, signal } = 
   return data;
 }
 
+async function requestBlob(path, formData) {
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch {
+    throw new Error("No fue posible conectar con el asistente. Verifica tu conexión.");
+  }
+
+  if (!response.ok) {
+    let detail = "No fue posible generar la vista previa.";
+    try {
+      const data = await response.json();
+      detail = data.detail || data.message || detail;
+    } catch {
+      detail = (await response.text()) || detail;
+    }
+    throw new Error(detail);
+  }
+
+  return response.blob();
+}
+
 export const api = {
   health: () => request("/api/health"),
   chat: (payload) => request("/api/chat", { method: "POST", body: payload }),
   vision: (formData) => request("/api/vision", { method: "POST", body: formData, isForm: true }),
+  compose: (formData) => requestBlob("/api/compose", formData),
   creditCheck: (payload) => request("/api/credit-check", { method: "POST", body: payload }),
   creditConfig: () => request("/api/credit/config"),
   advisorStatus: () => request("/api/advisor/status"),
@@ -68,6 +94,7 @@ export const api = {
     const suffix = city ? `?city=${encodeURIComponent(city)}` : "";
     return request(`/api/products/${encodeURIComponent(id)}${suffix}`);
   },
+  productCutoutUrl: (id) => `${BASE_URL}/api/products/${encodeURIComponent(id)}/cutout`,
   cities: () => request("/api/cities"),
   customer: (userId) => request(`/api/customer/${encodeURIComponent(userId)}`),
   history: (sessionId) => request(`/api/chat/history/${encodeURIComponent(sessionId)}`),

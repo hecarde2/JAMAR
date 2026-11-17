@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
-from routes import advisor, chat, credit, customers, products, vision
+from routes import advisor, chat, compose, credit, customers, products, vision
 from schemas import HealthResponse
 from snowflake_client import get_snowflake_client
 
@@ -64,6 +64,7 @@ app.include_router(credit.router, prefix="/api")
 app.include_router(advisor.router, prefix="/api")
 app.include_router(products.router, prefix="/api")
 app.include_router(vision.router, prefix="/api")
+app.include_router(compose.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 
 

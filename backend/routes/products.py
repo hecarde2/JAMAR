@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import io
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 
+from product_images import load_product_rgba, product_image_media_type, resolve_product_image_path
 from schemas import InventorySummary, Product
 from snowflake_client import get_snowflake_client
 
@@ -31,6 +34,28 @@ def list_products(
         limit=limit,
     )
     return [Product(**item) for item in items]
+
+
+@router.get("/products/{product_id}/cutout", summary="Imagen del producto sin fondo")
+def get_product_cutout(product_id: str) -> Response:
+    """Entrega el producto con transparencia para usarlo sobre una fotografía."""
+    item = get_snowflake_client().get_product(product_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    product = load_product_rgba(item.get("image") or "sofa.png")
+    output = io.BytesIO()
+    product.save(output, format="PNG", optimize=True)
+    return Response(content=output.getvalue(), media_type="image/png")
+
+
+@router.get("/products/{product_id}/image", summary="Imagen del producto")
+def get_product_image(product_id: str) -> FileResponse:
+    """Entrega el archivo de imagen asociado al producto."""
+    item = get_snowflake_client().get_product(product_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    path = resolve_product_image_path(item.get("image") or "sofa.png")
+    return FileResponse(path, media_type=product_image_media_type(path))
 
 
 @router.get("/products/{product_id}", response_model=Product, summary="Detalle de producto")

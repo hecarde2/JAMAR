@@ -2,6 +2,7 @@ import {
   ArrowUpRight,
   CalendarClock,
   CheckCircle2,
+  Download,
   Headset,
   Info,
   Palette,
@@ -140,7 +141,7 @@ function CreditSummary({ offer, onAdjust }) {
 /**
  * Renderiza un turno de conversación, incluyendo productos, crédito y análisis visual.
  */
-export default function MessageBubble({ message, onCredit, onAdd, onSuggestion }) {
+export default function MessageBubble({ message, onCredit, onAdd, onPreview, onSuggestion }) {
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -196,10 +197,42 @@ export default function MessageBubble({ message, onCredit, onAdd, onSuggestion }
           {message.advisor && <AdvisorSummary advisor={message.advisor} />}
         </div>
 
+        {message.renderedImage && (
+          <div className="mt-2.5 overflow-hidden rounded-2xl border border-jamar/20 bg-white shadow-soft animate-fade-up">
+            <img
+              src={message.renderedImage}
+              alt={`${message.renderedProduct?.name || "Producto"} en tu espacio`}
+              className="max-h-72 w-full object-contain bg-stone-900"
+            />
+            <div className="flex items-center justify-between gap-2 px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-semibold text-stone-800">
+                  {message.renderedProduct?.name || "Vista previa"}
+                </p>
+                <p className="text-[9.5px] text-stone-500">Simulación visual · no es una foto real</p>
+              </div>
+              <a
+                href={message.renderedImage}
+                download="jamar-vista-previa.png"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-stone-200 px-2 py-1 text-[10px] font-semibold text-stone-600 transition hover:border-jamar/40 hover:text-jamar"
+              >
+                <Download size={11} />
+                Descargar
+              </a>
+            </div>
+          </div>
+        )}
+
         {message.products?.length > 0 && (
           <div className="mt-2.5 grid gap-2.5">
             {message.products.map((product) => (
-              <ProductCard key={product.id} product={product} onCredit={onCredit} onAdd={onAdd} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                onCredit={onCredit}
+                onAdd={onAdd}
+                onPreview={onPreview}
+              />
             ))}
           </div>
         )}
